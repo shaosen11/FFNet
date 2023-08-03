@@ -1,0 +1,95 @@
+nohup: ignoring input
+precompute_knns.py:24: UserWarning: 
+The version_base parameter is not specified.
+Please specify a compatability version level, or None.
+Will assume defaults for version 1.1
+  @hydra.main(config_path="configs", config_name="train_config.yml")
+/home/shaosen/miniconda3/envs/stego/lib/python3.6/site-packages/hydra/plugins/config_source.py:126: UserWarning: Support for .yml files is deprecated. Use .yaml extension for Hydra config files
+  "Support for .yml files is deprecated. Use .yaml extension for Hydra config files"
+/home/shaosen/miniconda3/envs/stego/lib/python3.6/site-packages/hydra/_internal/hydra.py:127: UserWarning: Future Hydra versions will no longer change working directory at job runtime by default.
+See https://hydra.cc/docs/1.2/upgrades/1.1_to_1.2/changes_to_job_working_dir/ for more information.
+  configure_logging=with_log_configuration,
+Global seed set to 0
+Downloading: "https://dl.fbaipublicfiles.com/dino/dino_deitsmall8_300ep_pretrain/dino_deitsmall8_300ep_pretrain.pth" to /home/shaosen/.cache/torch/hub/checkpoints/dino_deitsmall8_300ep_pretrain.pth
+output_root: ../
+pytorch_data_dir: ./datadrive/pytorch-data/
+experiment_name: exp1
+log_dir: cocostuff27
+azureml_logging: true
+submitting_to_aml: false
+num_workers: 24
+max_steps: 5000
+batch_size: 16
+num_neighbors: 7
+dataset_name: cocostuff27
+dir_dataset_name: null
+dir_dataset_n_classes: 5
+has_labels: false
+crop_type: five
+crop_ratio: 0.5
+res: 224
+loader_crop_type: center
+extra_clusters: 0
+use_true_labels: false
+use_recalibrator: false
+model_type: vit_small
+arch: dino
+use_fit_model: false
+dino_feat_type: feat
+projection_type: nonlinear
+dino_patch_size: 8
+granularity: 1
+continuous: true
+dim: 70
+dropout: true
+zero_clamp: true
+lr: 0.0005
+pretrained_weights: null
+use_salience: false
+stabalize: false
+stop_at_zero: true
+pointwise: true
+feature_samples: 11
+neg_samples: 5
+aug_alignment_weight: 0.0
+correspondence_weight: 1.0
+neg_inter_weight: 0.63
+pos_inter_weight: 0.25
+pos_intra_weight: 0.67
+neg_inter_shift: 0.46
+pos_inter_shift: 0.12
+pos_intra_shift: 0.18
+rec_weight: 0.0
+repulsion_weight: 0.0
+crf_weight: 0.0
+alpha: 0.5
+beta: 0.15
+gamma: 0.05
+w1: 10.0
+w2: 3.0
+shift: 0.0
+crf_samples: 1000
+color_space: rgb
+reset_probe_steps: null
+n_images: 5
+scalar_log_freq: 10
+checkpoint_freq: 50
+val_freq: 100
+hist_freq: 100
+
+../data
+../
+Since no pretrained weights have been provided, we load the reference pretrained DINO weights.
+  0%|          | 0.00/82.7M [00:00<?, ?B/s]  0%|          | 40.0k/82.7M [00:00<06:32, 221kB/s]  0%|          | 96.0k/82.7M [00:00<05:13, 276kB/s]  0%|          | 168k/82.7M [00:00<03:31, 410kB/s]   0%|          | 264k/82.7M [00:00<02:31, 570kB/s]  0%|          | 392k/82.7M [00:00<01:51, 772kB/s]  1%|          | 600k/82.7M [00:00<01:14, 1.16MB/s]  1%|          | 888k/82.7M [00:00<00:51, 1.67MB/s]  2%|▏         | 1.27M/82.7M [00:00<00:35, 2.43MB/s]  2%|▏         | 1.85M/82.7M [00:01<00:24, 3.50MB/s]  3%|▎         | 2.20M/82.7M [00:01<00:37, 2.28MB/s]  3%|▎         | 2.51M/82.7M [00:01<01:02, 1.34MB/s]  5%|▌         | 4.41M/82.7M [00:02<00:25, 3.24MB/s]  7%|▋         | 6.01M/82.7M [00:02<00:15, 5.13MB/s]  8%|▊         | 6.74M/82.7M [00:02<00:15, 5.28MB/s]  9%|▉         | 7.42M/82.7M [00:02<00:14, 5.42MB/s] 10%|▉         | 8.07M/82.7M [00:02<00:14, 5.50MB/s] 11%|█         | 8.69M/82.7M [00:02<00:20, 3.81MB/s] 11%|█▏        | 9.34M/82.7M [00:03<00:17, 4.30MB/s] 13%|█▎        | 10.6M/82.7M [00:03<00:12, 6.07MB/s] 14%|█▎        | 11.4M/82.7M [00:03<00:12, 6.11MB/s] 15%|█▍        | 12.1M/82.7M [00:03<00:12, 6.14MB/s] 15%|█▌        | 12.7M/82.7M [00:03<00:11, 6.17MB/s] 16%|█▌        | 13.4M/82.7M [00:04<00:24, 2.95MB/s] 19%|█▉        | 16.0M/82.7M [00:04<00:12, 5.70MB/s] 20%|██        | 16.7M/82.7M [00:04<00:15, 4.41MB/s] 21%|██▏       | 17.6M/82.7M [00:04<00:13, 5.02MB/s] 23%|██▎       | 18.7M/82.7M [00:04<00:11, 6.04MB/s] 24%|██▎       | 19.5M/82.7M [00:04<00:10, 6.09MB/s] 24%|██▍       | 20.2M/82.7M [00:05<00:10, 6.07MB/s] 25%|██▌       | 20.9M/82.7M [00:05<00:15, 4.15MB/s] 26%|██▌       | 21.4M/82.7M [00:05<00:18, 3.49MB/s] 29%|██▉       | 23.8M/82.7M [00:05<00:10, 6.16MB/s] 30%|██▉       | 24.5M/82.7M [00:06<00:13, 4.55MB/s] 31%|███       | 25.4M/82.7M [00:06<00:11, 5.15MB/s] 32%|███▏      | 26.5M/82.7M [00:06<00:09, 6.19MB/s] 33%|███▎      | 27.2M/82.7M [00:06<00:09, 6.19MB/s] 34%|███▍      | 27.9M/82.7M [00:06<00:09, 6.20MB/s] 35%|███▍      | 28.6M/82.7M [00:06<00:09, 6.17MB/s] 35%|███▌      | 29.3M/82.7M [00:06<00:09, 6.21MB/s] 36%|███▌      | 29.9M/82.7M [00:07<00:13, 3.98MB/s] 37%|███▋      | 30.4M/82.7M [00:07<00:12, 4.27MB/s] 38%|███▊      | 31.1M/82.7M [00:07<00:11, 4.57MB/s] 39%|███▉      | 32.4M/82.7M [00:07<00:14, 3.58MB/s] 42%|████▏     | 34.6M/82.7M [00:08<00:08, 5.89MB/s] 43%|████▎     | 35.3M/82.7M [00:08<00:08, 5.61MB/s] 44%|████▍     | 36.6M/82.7M [00:08<00:07, 6.88MB/s] 45%|████▌     | 37.4M/82.7M [00:08<00:07, 6.60MB/s] 46%|████▌     | 38.1M/82.7M [00:08<00:07, 6.36MB/s] 47%|████▋     | 38.8M/82.7M [00:08<00:07, 6.23MB/s] 48%|████▊     | 39.5M/82.7M [00:08<00:07, 6.18MB/s] 48%|████▊     | 40.1M/82.7M [00:09<00:10, 4.09MB/s] 49%|████▉     | 40.9M/82.7M [00:09<00:09, 4.81MB/s] 51%|█████     | 42.0M/82.7M [00:09<00:06, 6.19MB/s] 52%|█████▏    | 42.7M/82.7M [00:09<00:06, 6.18MB/s] 52%|█████▏    | 43.4M/82.7M [00:09<00:06, 6.17MB/s] 53%|█████▎    | 44.1M/82.7M [00:09<00:06, 6.13MB/s] 54%|█████▍    | 44.7M/82.7M [00:09<00:06, 6.16MB/s] 55%|█████▍    | 45.3M/82.7M [00:09<00:06, 6.11MB/s] 56%|█████▌    | 45.9M/82.7M [00:10<00:06, 6.00MB/s] 56%|█████▋    | 46.5M/82.7M [00:10<00:13, 2.82MB/s] 59%|█████▉    | 48.9M/82.7M [00:10<00:05, 6.10MB/s] 60%|██████    | 49.9M/82.7M [00:10<00:06, 5.67MB/s] 61%|██████▏   | 50.7M/82.7M [00:11<00:05, 5.78MB/s] 62%|██████▏   | 51.5M/82.7M [00:11<00:05, 5.87MB/s] 63%|██████▎   | 52.2M/82.7M [00:11<00:05, 5.91MB/s] 64%|██████▍   | 52.9M/82.7M [00:11<00:05, 5.85MB/s] 65%|██████▍   | 53.5M/82.7M [00:12<00:15, 2.04MB/s] 65%|██████▌   | 54.0M/82.7M [00:12<00:14, 2.05MB/s] 68%|██████▊   | 55.8M/82.7M [00:12<00:07, 3.98MB/s] 68%|██████▊   | 56.7M/82.7M [00:12<00:06, 4.38MB/s] 69%|██████▉   | 57.4M/82.7M [00:13<00:05, 4.71MB/s] 70%|███████   | 58.1M/82.7M [00:13<00:05, 5.00MB/s] 71%|███████   | 58.8M/82.7M [00:13<00:04, 5.25MB/s] 72%|███████▏  | 59.4M/82.7M [00:13<00:04, 5.44MB/s] 73%|███████▎  | 60.1M/82.7M [00:13<00:04, 5.60MB/s] 73%|███████▎  | 60.7M/82.7M [00:13<00:06, 3.70MB/s] 74%|███████▍  | 61.5M/82.7M [00:13<00:04, 4.52MB/s] 76%|███████▌  | 62.7M/82.7M [00:13<00:03, 6.16MB/s] 77%|███████▋  | 63.4M/82.7M [00:14<00:03, 6.21MB/s] 78%|███████▊  | 64.1M/82.7M [00:14<00:04, 4.19MB/s] 78%|███████▊  | 64.7M/82.7M [00:14<00:04, 4.45MB/s] 79%|███████▉  | 65.3M/82.7M [00:14<00:03, 4.69MB/s] 81%|████████  | 66.7M/82.7M [00:14<00:02, 7.08MB/s] 82%|████████▏ | 67.6M/82.7M [00:14<00:02, 6.73MB/s] 83%|████████▎ | 68.3M/82.7M [00:15<00:03, 4.51MB/s] 84%|████████▎ | 69.1M/82.7M [00:15<00:02, 5.13MB/s] 85%|████████▌ | 70.5M/82.7M [00:15<00:01, 7.03MB/s] 86%|████████▋ | 71.4M/82.7M [00:16<00:04, 2.89MB/s] 89%|████████▉ | 73.8M/82.7M [00:16<00:01, 4.95MB/s] 90%|█████████ | 74.7M/82.7M [00:16<00:02, 4.14MB/s] 91%|█████████▏| 75.5M/82.7M [00:16<00:01, 4.65MB/s] 93%|█████████▎| 76.6M/82.7M [00:17<00:01, 5.58MB/s] 94%|█████████▎| 77.4M/82.7M [00:17<00:00, 5.74MB/s] 95%|█████████▍| 78.2M/82.7M [00:17<00:01, 3.44MB/s] 97%|█████████▋| 80.5M/82.7M [00:17<00:00, 5.64MB/s] 98%|█████████▊| 81.3M/82.7M [00:18<00:00, 4.40MB/s] 99%|█████████▉| 82.2M/82.7M [00:18<00:00, 5.01MB/s]100%|██████████| 82.7M/82.7M [00:18<00:00, 4.74MB/s]./datadrive/pytorch-data/nns/nns_vit_small_cocostuff27_val_five_224.npz not found, computing
+
+Error executing job with overrides: []
+Traceback (most recent call last):
+  File "precompute_knns.py", line 78, in my_app
+    cfg=cfg,
+  File "/home/shaosen/workspace/cv/STEGO/src/data.py", line 495, in __init__
+    target_transform=target_transform, **extra_args)
+  File "/home/shaosen/workspace/cv/STEGO/src/data.py", line 380, in __init__
+    self.num_images = len(os.listdir(self.img_dir))
+FileNotFoundError: [Errno 2] No such file or directory: './datadrive/pytorch-data/cropped/cocostuff27_five_crop_0.5/img/val'
+
+Set the environment variable HYDRA_FULL_ERROR=1 for a complete stack trace.
