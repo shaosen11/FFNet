@@ -727,7 +727,6 @@ class SwinTransformerV2(nn.Module):
                 self.layer_fuse_out_channels.append(embed_dim * 2 ** (i))
 
 
-
         self.layer_fuse_window_size = [(img_size // patch_size) // 2 ** i for i in range(self.num_layers)]
 
         # 特征融合
@@ -823,6 +822,14 @@ def swinv2_small(img_size = 256, window_size=8, patch_size=4):
                              depths=[2, 2, 18, 2], 
                              num_heads=[3, 6, 12, 24])
 
+def swinv2_base(img_size = 256, window_size=8, patch_size=4):
+    return SwinTransformerV2(img_size=img_size, 
+                             window_size=window_size, 
+                             patch_size=patch_size,
+                             embed_dim=128, 
+                             depths=[2, 2, 18, 2], 
+                             num_heads=[4, 8, 16, 32])
+
 
 if __name__ == "__main__":
     img_size = 256
@@ -830,20 +837,20 @@ if __name__ == "__main__":
 
     input_tensor = torch.randn(10, 3, img_size, img_size, dtype=torch.float)
 
-    net = swinv2_small(img_size=img_size, window_size=window_size, patch_size=4)
-    # print(net)
-    # for name, param in net.named_parameters():
-    #     if 'layers_fuse' not in name:
-    #         print(name)
-    #         param.requires_grad = False
+    net = swinv2_base(img_size=img_size, window_size=window_size, patch_size=4)
+    print(net)
+    for name, param in net.named_parameters():
+        if 'layers_fuse' not in name:
+            print(name)
+            param.requires_grad = False
         
-    # pretrained_weights = "./swinv2_small_patch4_window8_256.pth"
-    # state_dict = torch.load(pretrained_weights, map_location="cpu")
-    # for name, weight in state_dict.items():
-    #     print(name)
+    pretrained_weights = "./swinv2_base_patch4_window16_256.pth"
+    state_dict = torch.load(pretrained_weights, map_location="cpu")
+    for name, weight in state_dict.items():
+        print(name)
 
-    # msg = net.load_state_dict(state_dict['model'], strict=False)
-    # print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
+    msg = net.load_state_dict(state_dict['model'], strict=False)
+    print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
 
     feat, attns, qkvs = net.get_intermediate_feat(input_tensor)
 
