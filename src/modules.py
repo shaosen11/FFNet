@@ -152,7 +152,7 @@ class SwinFeaturizer(nn.Module):
         self.feat_type = self.cfg.dino_feat_type
         
         # swin small
-        arch = self.cfg.swin_model_type
+        arch = "swinv2_" + cfg.swin_model_type + "_" + "window" + str(cfg.swin_window_size)
 
         # 获取模型
         self.model = swinv2.__dict__[arch](img_size=cfg.swin_img_size, 
@@ -164,13 +164,28 @@ class SwinFeaturizer(nn.Module):
             if 'layers_fuse' not in name:
                 param.requires_grad = False
 
-        if cfg.swin_pretrained_weights is not None:
-            state_dict = torch.load(cfg.swin_pretrained_weights, map_location="cpu")
+        if cfg.swin_model_type == "tiny" and cfg.swin_window_size == 8:
+            pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window8_256.pth"
+        elif cfg.swin_model_type == "tiny" and cfg.swin_window_size == 16:
+            pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window16_256.pth"
+        elif cfg.swin_model_type == "small" and cfg.swin_window_size == 8:
+            pretrained_weights = "./SwinV2/swinv2_small_patch4_window8_256.pth"
+        elif cfg.swin_model_type == "small" and cfg.swin_window_size == 16:
+            pretrained_weights = "./SwinV2/swinv2_small_patch4_window16_256.pth"
+        elif cfg.swin_model_type == "base" and cfg.swin_window_size == 8:
+            pretrained_weights = "./SwinV2/swinv2_base_patch4_window8_256.pth"
+        elif cfg.swin_model_type == "base" and cfg.swin_window_size == 16:
+            pretrained_weights = "./SwinV2/swinv2_base_patch4_window16_256.pth"
+        else:
+            raise ValueError("Unknown model type and window size")
+
+        if pretrained_weights is not None:
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
             msg = self.model.load_state_dict(state_dict['model'], strict=False)
-            print('Pretrained weights found at {} and loaded with msg: {}'.format(cfg.swin_pretrained_weights, msg))
+            print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
 
 
-        self.n_feats = 768
+        self.n_feats = 256
 
         # KNN聚类头
         self.cluster1 = self.make_clusterer(self.n_feats)
@@ -219,6 +234,8 @@ class SwinFeaturizer(nn.Module):
         if return_class_feat:
             return feat[:, :1, :].reshape(feat.shape[0], 1, 1, -1).permute(0, 3, 1, 2)
 
+        # print("image_feat:", image_feat.shape)
+
         # 聚类
         if self.proj_type is not None:
             code = self.cluster1(self.dropout(image_feat))
@@ -226,8 +243,6 @@ class SwinFeaturizer(nn.Module):
                 code += self.cluster2(self.dropout(image_feat))
         else:
             code = image_feat
-
-        print()
 
         # dropout
         if self.cfg.dropout:
@@ -661,50 +676,79 @@ class ContrastiveCorrelationLoss(nn.Module):
     #             neg_inter_loss,
     #             neg_inter_cd)
 
+    # def forward(self,
+    #             orig_feats: torch.Tensor, orig_feats_pos: torch.Tensor,
+    #             aug_feats: torch.Tensor, aug_feats_pos:torch.Tensor):
+    #     """
+    #         feats:[batch_size, C, H, W]
+    #     """
+    #     coord_shape = [orig_feats.shape[0], self.cfg.feature_samples, self.cfg.feature_samples, 2]  # [16, 11, 11, 2]
+
+    #     # 最终生成的 coords1 和 coords2 张量是随机坐标，其中每个坐标点都由两个浮点数值表示，位于 [-1, 1) 区间内。
+    #     # 这些坐标将用于在原始特征张量中进行采样，从而获取对应的样本特征用于计算对比损失。
+    #     coords1 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1 # [16, 11, 11, 2]
+    #     coords2 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
+		
+	# 	# 采用视角coords1采样knn分支
+    #     # 采样img
+    #     feats = sample(orig_feats, coords1) # [batch_size, C, 11, 11]
+    #     # 采样img_pos
+    #     feats_pos = sample(orig_feats_pos, coords1)
+		
+	# 	# 使用coords2采样aug分支
+    #     # 采样aug_feats
+    #     feats_aug = sample(aug_feats, coords2)
+
+    #     # 采样aug_feats_pos
+    #     feats_aug_pos = sample(aug_feats_pos, coords2)
+
+    #     # 生成负样本列表
+    #     neg_list_knn = []
+    #     neg_list_aug = []
+    #     for i in range(self.cfg.neg_samples):   # neg_samples=5
+    #         # 生成一个具有原始特征张量 orig_feats 批次大小的随机排列张量 perm_neg
+    #         perm_neg = super_perm(orig_feats.shape[0], orig_feats.device)
+    #         # 根据分支不同采用不同的coords采样策略
+    #         feats_neg_1 = sample(orig_feats[perm_neg], coords2)
+    #         feats_neg_2 = sample(orig_feats[perm_neg], coords1)
+    #         # 新增，创建负样本列表neg_list
+    #         neg_list_knn.append(feats_neg_1)
+    #         neg_list_aug.append(feats_neg_2)
+
+    #     loss_knn = self.helper_SegNCE(feats, feats_pos, neg_list_knn)
+    #     loss_aug = self.helper_SegNCE(feats_aug, feats_aug_pos, neg_list_aug)
+    #     losses = loss_knn + loss_aug
+
+    #     return (losses, loss_knn, loss_aug)
+    
     def forward(self,
-                orig_feats: torch.Tensor, orig_feats_pos: torch.Tensor,
-                aug_feats: torch.Tensor, aug_feats_pos:torch.Tensor):
+            feats: torch.Tensor, feats_pos: torch.Tensor):
         """
             feats:[batch_size, C, H, W]
         """
-        coord_shape = [orig_feats.shape[0], self.cfg.feature_samples, self.cfg.feature_samples, 2]  # [16, 11, 11, 2]
+        coord_shape = [feats.shape[0], self.cfg.feature_samples, self.cfg.feature_samples, 2]  # [16, 11, 11, 2]
 
         # 最终生成的 coords1 和 coords2 张量是随机坐标，其中每个坐标点都由两个浮点数值表示，位于 [-1, 1) 区间内。
         # 这些坐标将用于在原始特征张量中进行采样，从而获取对应的样本特征用于计算对比损失。
-        coords1 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1 # [16, 11, 11, 2]
-        coords2 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
+        coords = torch.rand(coord_shape, device=feats.device) * 2 - 1 # [16, 11, 11, 2]
 		
 		# 采用视角coords1采样knn分支
         # 采样img
-        feats = sample(orig_feats, coords1) # [batch_size, C, 11, 11]
+        feats = sample(feats, coords) # [batch_size, C, 11, 11]
         # 采样img_pos
-        feats_pos = sample(orig_feats_pos, coords1)
-		
-		# 使用coords2采样aug分支
-        # 采样aug_feats
-        feats_aug = sample(aug_feats, coords2)
-
-        # 采样aug_feats_pos
-        feats_aug_pos = sample(aug_feats_pos, coords2)
+        feats_pos = sample(feats_pos, coords)
 
         # 生成负样本列表
         neg_list_knn = []
-        neg_list_aug = []
         for i in range(self.cfg.neg_samples):   # neg_samples=5
             # 生成一个具有原始特征张量 orig_feats 批次大小的随机排列张量 perm_neg
-            perm_neg = super_perm(orig_feats.shape[0], orig_feats.device)
+            perm_neg = super_perm(feats.shape[0], feats.device)
             # 根据分支不同采用不同的coords采样策略
-            feats_neg_1 = sample(orig_feats[perm_neg], coords2)
-            feats_neg_2 = sample(orig_feats[perm_neg], coords1)
+            feats_neg_1 = sample(feats[perm_neg], coords)
             # 新增，创建负样本列表neg_list
             neg_list_knn.append(feats_neg_1)
-            neg_list_aug.append(feats_neg_2)
 
-        loss_knn = self.helper_SegNCE(feats, feats_pos, neg_list_knn)
-        loss_aug = self.helper_SegNCE(feats_aug, feats_aug_pos, neg_list_aug)
-        losses = loss_knn + loss_aug
-
-        return (losses, loss_knn, loss_aug)
+        return self.helper_SegNCE(feats, feats_pos, neg_list_knn)
 
 class Decoder(nn.Module):
     def __init__(self, code_channels, feat_channels):

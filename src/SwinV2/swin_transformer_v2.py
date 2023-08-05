@@ -830,6 +830,23 @@ def swinv2_base(img_size = 256, window_size=8, patch_size=4):
                              depths=[2, 2, 18, 2], 
                              num_heads=[4, 8, 16, 32])
 
+def swinv2_tiny_window8(img_size = 256, window_size=8, patch_size=4):
+    return swinv2_tiny(img_size, window_size, patch_size)
+
+def swinv2_tiny_window16(img_size = 256, window_size=16, patch_size=4):
+    return swinv2_tiny(img_size, window_size, patch_size)
+
+def swinv2_small_window8(img_size = 256, window_size=8, patch_size=4):
+    return swinv2_small(img_size, window_size, patch_size)
+
+def swinv2_small_window16(img_size = 256, window_size=16, patch_size=4):
+    return swinv2_base(img_size, window_size, patch_size)
+
+def swinv2_base_window8(img_size = 256, window_size=8, patch_size=4):
+    return swinv2_small(img_size, window_size, patch_size)
+
+def swinv2_base_window16(img_size = 256, window_size=16, patch_size=4):
+    return swinv2_base(img_size, window_size, patch_size)
 
 if __name__ == "__main__":
     img_size = 256

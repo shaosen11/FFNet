@@ -56,8 +56,7 @@ stop_at_zero: True
 swin_img_size: 256
 swin_window_size: 8
 swin_patch_size: 4
-swin_model_type: "swinv2_small"
-swin_pretrained_weights: "./SwinV2/swinv2_small_patch4_window8_256.pth"
+swin_model_type: "base"
 
 # resnet
 resnet_model_type: "resnet50"

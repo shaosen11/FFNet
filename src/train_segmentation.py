@@ -165,29 +165,29 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
             
         log_args = dict(sync_dist=False, rank_zero_only=True)
 
-        # 使用标签
-        if self.cfg.use_true_labels:
-            signal = one_hot_feats(label + 1, self.n_classes + 1)
-            signal_pos = one_hot_feats(label_pos + 1, self.n_classes + 1)
-        # 不使用标签
-        else:
-            signal = feats
-            signal_pos = feats_pos
+        # # 使用标签
+        # if self.cfg.use_true_labels:
+        #     signal = one_hot_feats(label + 1, self.n_classes + 1)
+        #     signal_pos = one_hot_feats(label_pos + 1, self.n_classes + 1)
+        # # 不使用标签
+        # else:
+        #     signal = feats
+        #     signal_pos = feats_pos
 
         loss = 0
 
-        # 打印日志
-        should_log_hist = (self.cfg.hist_freq is not None) and \
-                          (self.global_step % self.cfg.hist_freq == 0) and \
-                          (self.global_step > 0)
+        # # 打印日志
+        # should_log_hist = (self.cfg.hist_freq is not None) and \
+        #                   (self.global_step % self.cfg.hist_freq == 0) and \
+        #                   (self.global_step > 0)
         
-        # 真实标签，KNN标签
-        if self.cfg.use_salience:
-            salience = batch["mask"].to(torch.float32).squeeze(1)
-            salience_pos = batch["mask_pos"].to(torch.float32).squeeze(1)
-        else:
-            salience = None
-            salience_pos = None
+        # # 真实标签，KNN标签
+        # if self.cfg.use_salience:
+        #     salience = batch["mask"].to(torch.float32).squeeze(1)
+        #     salience_pos = batch["mask_pos"].to(torch.float32).squeeze(1)
+        # else:
+        #     salience = None
+        #     salience_pos = None
 
         # 自身损失，自身相关性
         # knn损失，knn相关性
@@ -202,10 +202,20 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
             #     salience, salience_pos,
             #     code, code_pos,
             # )
-            (loss, loss_knn, loss_aug) = self.contrastive_corr_loss_fn(
-                feats, feats_pos,
+            # (loss, loss_knn, loss_aug) = self.contrastive_corr_loss_fn(
+            #     feats, feats_pos,
+            #     feats_aug, feats_aug_pos
+            # )
+
+            loss_knn = self.contrastive_corr_loss_fn(
+                feats, feats_pos
+            )
+
+            loss_aug = self.contrastive_corr_loss_fn(
                 feats_aug, feats_aug_pos
             )
+
+            loss = loss_knn + loss_aug
 
             # # 记录日志
             # if should_log_hist:
