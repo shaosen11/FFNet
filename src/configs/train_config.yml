@@ -9,7 +9,7 @@ submitting_to_aml: False
 num_workers: 4
 max_steps: -1
 max_epochs: 1000
-batch_size: 64
+batch_size: 32
 
 num_neighbors: 7
 dataset_name: "cityscapes"
@@ -21,7 +21,7 @@ dir_dataset_n_classes: 5
 has_labels: False
 crop_type: "five"
 crop_ratio: .5
-res: 224
+res: 256
 input_res: 256
 loader_crop_type: "center"
 
@@ -29,10 +29,10 @@ loader_crop_type: "center"
 extra_clusters: 0
 use_true_labels: False
 use_recalibrator: False
-model_type: "vit_small"
-arch: "dino"
-# model_type: "swin_small"
-# arch: "swin"
+# model_type: "vit_small"
+# arch: "dino"
+model_type: "swinv2_base"
+arch: "swin"
 # model_type: "resnet50"
 # arch: "resnet"
 use_fit_model: False
@@ -54,9 +54,10 @@ stop_at_zero: True
 
 # swinv2
 swin_img_size: 256
-swin_window_size: 8
+swin_window_size: 16
 swin_patch_size: 4
 swin_model_type: "base"
+swin_is_classify: True
 
 # resnet
 resnet_model_type: "resnet50"

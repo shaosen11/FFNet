@@ -14,6 +14,30 @@ import numpy as np
 import math
 
 
+# 封装的卷积，归一化核激活层
+class ConvBNReLU(nn.Sequential):
+    def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, groups=1):
+        # 如果pading等于3，那么padding=0
+        padding = (kernel_size - 1) // 2
+        super(ConvBNReLU, self).__init__(
+            nn.Conv2d(in_channel, out_channel, kernel_size, stride, padding, groups=groups, bias=False),
+            nn.BatchNorm2d(out_channel),
+            nn.ReLU(inplace=True)
+        )
+
+
+class classHead(nn.Module):
+    def __init__(self, in_channel, num_classes=1000):
+        super().__init__()
+        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(in_channel, num_classes)
+
+    def forward(self, x):
+        x = self.avgpool(x)
+        x = torch.flatten(x, 1)
+        x = self.fc(x)
+        return x
+
 # class MSCAM(nn.Module):
 #     def __init__(self, inchannel: int, midchannel: int, device='cuda'):
 #         super().__init__()
@@ -35,44 +59,73 @@ import math
 #         fusion = torch.sigmoid(fusion)
 #         return x * fusion
 
+# class OPM(nn.Module):
+#     def __init__(self, inchannel: int):
+#         super().__init__()
+#         self.conv = nn.Conv2d(inchannel, 1, 1)
+
+#     def forward(self, x):
+#         return torch.sigmoid(self.conv(x))
+
+
 class OPM(nn.Module):
-    def __init__(self, inchannel: int):
+    def __init__(self, inchannel: int, kernel_size=3, expand_ratio=4):
         super().__init__()
+        hidden_channel = inchannel * expand_ratio
+
         self.conv = nn.Conv2d(inchannel, 1, 1)
 
+        self.conv_up = ConvBNReLU(in_channel=inchannel, out_channel=hidden_channel, kernel_size=1)
+        self.conv_mid = ConvBNReLU(in_channel=hidden_channel, out_channel=hidden_channel, kernel_size=kernel_size, groups=hidden_channel)
+        self.conv_down = ConvBNReLU(in_channel=hidden_channel, out_channel=inchannel, kernel_size=1)
+
     def forward(self, x):
-        return torch.sigmoid(self.conv(x))
+        shortcut = x
+        x = self.conv_up(x)
+        x = self.conv_mid(x)
+        x = self.conv_down(x)
+        return torch.sigmoid(self.conv(x + shortcut))
+
     
 
 class LayerFuse(nn.Module):
-    def __init__(self, chnnels, window_size):
+    def __init__(self, chnnels, window_size, kernel_size, num_classes=1000, is_classify=False):
         super().__init__()
         self.out_channels = chnnels
         self.window_size = window_size
+        self.kernel_size = kernel_size
+        self.is_classify = is_classify
 
         self.opms = nn.ModuleList([
-            OPM(self.out_channels[i])
+            OPM(self.out_channels[i], self.kernel_size[i])
         for i in range(len(self.out_channels))])
 
         self.up_convs = nn.ModuleList([
-            nn.Conv2d(self.out_channels[i - 1], self.out_channels[i], kernel_size=1)
+            # nn.Conv2d(self.out_channels[i - 1], self.out_channels[i], kernel_size=1)
+            ConvBNReLU(in_channel=self.out_channels[i - 1], out_channel=self.out_channels[i], kernel_size=1)
         for i in range(len(self.out_channels))])
 
         self.down_convs = nn.ModuleList([
-            nn.Conv2d(self.out_channels[i], self.out_channels[i - 1], kernel_size=1)
+            # nn.Conv2d(self.out_channels[i], self.out_channels[i - 1], kernel_size=1)
+            ConvBNReLU(in_channel=self.out_channels[i], out_channel=self.out_channels[i - 1], kernel_size=1)
         for i in range(len(self.out_channels))])
 
-        self.bns1 = nn.ModuleList([
-            nn.BatchNorm2d(self.out_channels[i])
-        for i in range(len(self.out_channels))])
+        if self.is_classify:
+            self.classHead = nn.ModuleList([
+                classHead(self.out_channels[i], num_classes)
+            for i in range(len(self.out_channels))])
 
-        self.act1 = nn.ReLU()
+        # self.bns1 = nn.ModuleList([
+        #     nn.BatchNorm2d(self.out_channels[i])
+        # for i in range(len(self.out_channels))])
 
-        self.bns2 = nn.ModuleList([
-            nn.BatchNorm2d(self.out_channels[i])
-        for i in range(len(self.out_channels))])
+        # self.act1 = nn.ReLU()
 
-        self.act2 = nn.ReLU()
+        # self.bns2 = nn.ModuleList([
+        #     nn.BatchNorm2d(self.out_channels[i])
+        # for i in range(len(self.out_channels))])
+
+        # self.act2 = nn.ReLU()
 
         for m in self.modules():
             if isinstance(m, nn.Conv2d):
@@ -80,6 +133,7 @@ class LayerFuse(nn.Module):
 
     def forward(self, features, n=1):
         feat = []
+        classResult = []
         last_feature = None
         for i in range(len(features) - 1, -1, -1):
             # 获取当前特征
@@ -107,6 +161,7 @@ class LayerFuse(nn.Module):
             # 最后一层无操作
             if i + 1 == len(features):
                 last_feature = feature
+
             else:
                 # 当前层升维
                 feature = self.up_convs[i + 1](feature)
@@ -116,24 +171,26 @@ class LayerFuse(nn.Module):
                 # 物体推荐模块
                 mask = self.opms[i + 1](last_feature)
                 last_feature = mask * last_feature + (1 - mask) * feature
-                # relu
-                last_feature = self.act1(last_feature)
-                # 归一化
-                last_feature = self.bns1[i + 1](last_feature)
+                # # relu
+                # last_feature = self.act1(last_feature)
+                # # 归一化
+                # last_feature = self.bns1[i + 1](last_feature)
                 # 降维
                 last_feature = self.down_convs[i + 1](last_feature)
-                # relu
-                last_feature = self.act2(last_feature)
-                # 归一化
-                last_feature = self.bns2[i](last_feature)
+                # # relu
+                # last_feature = self.act2(last_feature)
+                # # 归一化
+                # last_feature = self.bns2[i](last_feature)
+            if self.is_classify:
+                classResult.append(self.classHead[i](last_feature))
 
 
             if i < n:
                 next_window_size = self.window_size[i]
                 last_feature = F.interpolate(last_feature, (next_window_size, next_window_size), mode='bilinear')
                 feat.append(last_feature)
-        return feat
 
+        return feat, classResult
 
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
@@ -662,7 +719,8 @@ class SwinTransformerV2(nn.Module):
                  window_size=7, mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0], **kwargs):
+                 use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0],
+                 new_num_classes = 1000, is_classify=False, **kwargs):
         super().__init__()
 
         self.num_classes = num_classes
@@ -729,9 +787,16 @@ class SwinTransformerV2(nn.Module):
 
         self.layer_fuse_window_size = [(img_size // patch_size) // 2 ** i for i in range(self.num_layers)]
 
+        self.layer_fuse_kernel_size = [7, 5, 3, 1]
+
+        self.is_classify = is_classify
+
         # 特征融合
         self.layers_fuse = LayerFuse(self.layer_fuse_out_channels, 
-                                     self.layer_fuse_window_size)
+                                     self.layer_fuse_window_size,
+                                     self.layer_fuse_kernel_size,
+                                     new_num_classes,
+                                     self.is_classify)
 
 
         self.apply(self._init_weights)
@@ -774,7 +839,7 @@ class SwinTransformerV2(nn.Module):
         x = torch.flatten(x, 1)
         return x
 
-    def forward(self, x):
+    def new_forward_classification(self, x):
         x = self.forward_features(x)
         # for i in range(len(self.features) - 2, -1, -1):
         #     x = self.convs[i](x)
@@ -789,6 +854,14 @@ class SwinTransformerV2(nn.Module):
         x = self.head(x)
         return x
     
+    def forward(self, x):
+        x = self.forward_features(x)
+        # 特征融合
+        _, classResult = self.layers_fuse(self.features, n = 1)
+        # feat.append(self.features[3])
+
+        return classResult
+    
     def get_intermediate_feat(self, x, n=1):
         x = self.forward_features(x)
         feat = []
@@ -796,7 +869,8 @@ class SwinTransformerV2(nn.Module):
         qkvs = []
         
         # 特征融合
-        feat = self.layers_fuse(self.features, n = 1)
+        feat, classResult = self.layers_fuse(self.features, n = 1)
+        # feat.append(self.features[3])
 
         return feat, attns, qkvs
 
@@ -822,13 +896,15 @@ def swinv2_small(img_size = 256, window_size=8, patch_size=4):
                              depths=[2, 2, 18, 2], 
                              num_heads=[3, 6, 12, 24])
 
-def swinv2_base(img_size = 256, window_size=8, patch_size=4):
+def swinv2_base(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
     return SwinTransformerV2(img_size=img_size, 
                              window_size=window_size, 
                              patch_size=patch_size,
                              embed_dim=128, 
                              depths=[2, 2, 18, 2], 
-                             num_heads=[4, 8, 16, 32])
+                             num_heads=[4, 8, 16, 32],
+                             new_num_classes=new_num_classes,
+                             is_classify=is_classify)
 
 def swinv2_tiny_window8(img_size = 256, window_size=8, patch_size=4):
     return swinv2_tiny(img_size, window_size, patch_size)
@@ -840,13 +916,16 @@ def swinv2_small_window8(img_size = 256, window_size=8, patch_size=4):
     return swinv2_small(img_size, window_size, patch_size)
 
 def swinv2_small_window16(img_size = 256, window_size=16, patch_size=4):
-    return swinv2_base(img_size, window_size, patch_size)
+    return swinv2_small(img_size, window_size, patch_size)
 
 def swinv2_base_window8(img_size = 256, window_size=8, patch_size=4):
-    return swinv2_small(img_size, window_size, patch_size)
+    return swinv2_base(img_size, window_size, patch_size)
 
 def swinv2_base_window16(img_size = 256, window_size=16, patch_size=4):
     return swinv2_base(img_size, window_size, patch_size)
+
+def swinv2_base_window16_class(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
+    return swinv2_base(img_size, window_size, patch_size, new_num_classes=new_num_classes, is_classify=is_classify)
 
 if __name__ == "__main__":
     img_size = 256
@@ -854,14 +933,17 @@ if __name__ == "__main__":
 
     input_tensor = torch.randn(10, 3, img_size, img_size, dtype=torch.float)
 
-    net = swinv2_base(img_size=img_size, window_size=window_size, patch_size=4)
-    print(net)
-    for name, param in net.named_parameters():
-        if 'layers_fuse' not in name:
-            print(name)
-            param.requires_grad = False
+
+    net = swinv2_base_window16_class(new_num_classes=100)
+    # print(net)
+    # net = swinv2_base(img_size=img_size, window_size=window_size, patch_size=4)
+    # print(net)
+    # for name, param in net.named_parameters():
+    #     if 'layers_fuse' not in name:
+    #         print(name)
+    #         param.requires_grad = False
         
-    pretrained_weights = "./swinv2_base_patch4_window16_256.pth"
+    pretrained_weights = "./swinv2_base_patch4_window16_256-pre.pth"
     state_dict = torch.load(pretrained_weights, map_location="cpu")
     for name, weight in state_dict.items():
         print(name)
@@ -869,6 +951,15 @@ if __name__ == "__main__":
     msg = net.load_state_dict(state_dict['model'], strict=False)
     print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
 
-    feat, attns, qkvs = net.get_intermediate_feat(input_tensor)
 
-    print(feat[0].shape)
+    # to_save = {
+    #     'model': net.state_dict()
+    # }
+    # torch.save(to_save, "./swinv2_base_patch4_window16_256-pre-copy.pth")
+    # feat, attns, qkvs = net.get_intermediate_feat(input_tensor)
+
+    # print(feat[0].shape)
+
+    outs = net(input_tensor)
+
+    print(len(outs))

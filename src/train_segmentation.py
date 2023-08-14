@@ -217,6 +217,7 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
 
             loss = loss_knn + loss_aug
 
+
             # # 记录日志
             # if should_log_hist:
             #     self.logger.experiment.add_histogram("intra_cd", pos_intra_cd, self.global_step)
@@ -268,20 +269,21 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
 
         # # CRF，默认为0
         # if self.cfg.crf_weight > 0:
-            # CRF损失
-            crf = self.crf_loss_fn(
-                resize(img, 56),
-                norm(resize(code, 56))
-            ).mean()
-            self.log('loss/crf', crf, **log_args)
-            # 记录损失
-            loss += self.cfg.crf_weight * crf
+        #     # CRF损失
+        #     crf = self.crf_loss_fn(
+        #         resize(img, 56),
+        #         norm(resize(code, 56))
+        #     ).mean()
+        #     self.log('loss/crf', crf, **log_args)
+        #     # 记录损失
+        #     loss += self.cfg.crf_weight * crf
 
         # 展平标签
         flat_label = label.reshape(-1)
         # 标签大于0，且小于类属
         mask = (flat_label >= 0) & (flat_label < self.n_classes)
 
+        # detached_code = torch.clone(code.detach())
         detached_code = torch.clone(code.detach())
 
         # 计算线性输出

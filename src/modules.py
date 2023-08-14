@@ -154,38 +154,56 @@ class SwinFeaturizer(nn.Module):
         # swin small
         arch = "swinv2_" + cfg.swin_model_type + "_" + "window" + str(cfg.swin_window_size)
 
+        if cfg.swin_is_classify:
+            arch += "_class"
+        print("arch:", arch)
+
         # 获取模型
         self.model = swinv2.__dict__[arch](img_size=cfg.swin_img_size, 
                                            window_size=cfg.swin_window_size,
-                                           patch_size=cfg.swin_patch_size)
+                                           patch_size=cfg.swin_patch_size,
+                                           new_num_classes=100,
+                                           is_classify=False)
         self.model.train().cuda()
 
         for name, param in self.model.named_parameters():
             if 'layers_fuse' not in name:
                 param.requires_grad = False
+        
+        if cfg.swin_is_classify:
+            if cfg.swin_model_type == "base" and cfg.swin_window_size == 16:
+                pretrained_weights = "./SwinV2/swinv2_base_patch4_window16_256-pre.pth"
+            else:
+                raise ValueError("Unknown model type and window size")
+        else:    
+            if cfg.swin_model_type == "tiny" and cfg.swin_window_size == 8:
+                pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window8_256.pth"
+            elif cfg.swin_model_type == "tiny" and cfg.swin_window_size == 16:
+                pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window16_256.pth"
+            elif cfg.swin_model_type == "small" and cfg.swin_window_size == 8:
+                pretrained_weights = "./SwinV2/swinv2_small_patch4_window8_256.pth"
+            elif cfg.swin_model_type == "small" and cfg.swin_window_size == 16:
+                pretrained_weights = "./SwinV2/swinv2_small_patch4_window16_256.pth"
+            elif cfg.swin_model_type == "base" and cfg.swin_window_size == 8:
+                pretrained_weights = "./SwinV2/swinv2_base_patch4_window8_256.pth"
+            elif cfg.swin_model_type == "base" and cfg.swin_window_size == 16:
+                pretrained_weights = "./SwinV2/swinv2_base_patch4_window16_256.pth"
+            else:
+                raise ValueError("Unknown model type and window size")
 
-        if cfg.swin_model_type == "tiny" and cfg.swin_window_size == 8:
-            pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window8_256.pth"
-        elif cfg.swin_model_type == "tiny" and cfg.swin_window_size == 16:
-            pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window16_256.pth"
-        elif cfg.swin_model_type == "small" and cfg.swin_window_size == 8:
-            pretrained_weights = "./SwinV2/swinv2_small_patch4_window8_256.pth"
-        elif cfg.swin_model_type == "small" and cfg.swin_window_size == 16:
-            pretrained_weights = "./SwinV2/swinv2_small_patch4_window16_256.pth"
-        elif cfg.swin_model_type == "base" and cfg.swin_window_size == 8:
-            pretrained_weights = "./SwinV2/swinv2_base_patch4_window8_256.pth"
-        elif cfg.swin_model_type == "base" and cfg.swin_window_size == 16:
-            pretrained_weights = "./SwinV2/swinv2_base_patch4_window16_256.pth"
-        else:
-            raise ValueError("Unknown model type and window size")
+        print("pretrained_weights:", pretrained_weights)
 
         if pretrained_weights is not None:
             state_dict = torch.load(pretrained_weights, map_location="cpu")
             msg = self.model.load_state_dict(state_dict['model'], strict=False)
             print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
 
+        if cfg.swin_model_type == "base":
+            self.n_feats = 256
+        else:
+            self.n_feats = 192
 
-        self.n_feats = 256
+        # self.n_feats = 1024
 
         # KNN聚类头
         self.cluster1 = self.make_clusterer(self.n_feats)
@@ -219,6 +237,9 @@ class SwinFeaturizer(nn.Module):
 
         feat_h = img.shape[2] // self.patch_size
         feat_w = img.shape[3] // self.patch_size
+
+        # feat_h = img.shape[2] // (self.patch_size * 8)
+        # feat_w = img.shape[3] // (self.patch_size * 8)
 
 
         # 返回特征类型

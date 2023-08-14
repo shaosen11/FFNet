@@ -11,6 +11,7 @@ from omegaconf import DictConfig, OmegaConf
 from pytorch_lightning.utilities.seed import seed_everything
 from tqdm import tqdm
 
+import matplotlib.pyplot as plt
 
 # 获取图片特征
 def get_feats(model, loader):
@@ -41,9 +42,6 @@ def my_app(cfg: DictConfig) -> None:
     # 随机种子
     seed_everything(seed=0)
 
-    print(data_dir)
-    print(cfg.output_root)
-
     # 数据集模式
     image_sets = ["val", "train"]
     # 数据集名称
@@ -57,7 +55,7 @@ def my_app(cfg: DictConfig) -> None:
     #crop_types = [None]
 
     res = 256
-    n_batches = 16
+    n_batches = 128
 
     if cfg.arch == "dino":
         # 加载vit模型
@@ -77,8 +75,6 @@ def my_app(cfg: DictConfig) -> None:
         cut_model = load_model(cfg.model_type, join(cfg.output_root, "data")).cuda()
         no_ap_model = nn.Sequential(*list(cut_model.children())[:-1]).cuda()
     par_model = torch.nn.DataParallel(no_ap_model)
-
-    print(par_model)
 
     # 遍历裁剪类型
     for crop_type in crop_types:
@@ -115,7 +111,6 @@ def my_app(cfg: DictConfig) -> None:
                         all_nns = []
                         # 每步只处理step张特征
                         step = normed_feats.shape[0] // n_batches
-                        print(normed_feats.shape)
                         for i in tqdm(range(0, normed_feats.shape[0], step)):
                             # 清空缓存
                             torch.cuda.empty_cache()
