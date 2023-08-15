@@ -13,6 +13,8 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, use_amp=False,
     accu_num = torch.zeros(1).to(device)   # 累计预测正确的样本数
     optimizer.zero_grad()
 
+    accu_num_list = []
+
     lr_scheduler = None
     if epoch == 0 and warmup is True:  # 当训练第一轮（epoch=0）时，启用warmup训练方式，可理解为热身训练
         warmup_factor = 1.0 / 1000
@@ -36,7 +38,6 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, use_amp=False,
             pred = model(images.to(device))
             loss = 0
             loss_list = []
-            accu_num_list = []
             for i in range(len(pred)):
                 # loss += loss_function(pred[i], labels.to(device))
                 # pred_classes = torch.max(pred[i], dim=1)[1]
@@ -48,7 +49,10 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, use_amp=False,
                 pred_classes = torch.max(pred[i], dim=1)[1]
                 layer_acc_num = torch.eq(pred_classes, labels.to(device)).sum()
                 accu_num += layer_acc_num
-                accu_num_list.append(layer_acc_num)
+                if (len(accu_num_list) <= i):
+                    accu_num_list.append(layer_acc_num)
+                else:
+                    accu_num_list[i] += layer_acc_num
             
             # loss = loss_function(pred, labels.to(device))
 
@@ -71,9 +75,9 @@ def train_one_epoch(model, optimizer, data_loader, device, epoch, use_amp=False,
                 accu_loss.item() / (step + 1),
                 accu_num.item() / (sample_num * 4),
                 optimizer.param_groups[0]["lr"])
-            loss_info = " loss_0: {:.3f}, loss_1: {:.3f}, loss_2: {:.3f}, loss_3: {:.3f},".format(
+            loss_info = " loss_0: {:.3f}, loss_1: {:.3f}, loss_2: {:.3f}, loss_3: {:.3f}".format(
                 loss_list[0], loss_list[1], loss_list[2], loss_list[3])
-            acc_info = " acc_0: {:.3f}, acc_1: {:.3f}, acc_2: {:.3f}, acc_3: {:.3f},".format(
+            acc_info = " acc_0: {:.3f}, acc_1: {:.3f}, acc_2: {:.3f}, acc_3: {:.3f}".format(
                 accu_num_list[0] / (sample_num + 1), 
                 accu_num_list[1] / (sample_num + 1), 
                 accu_num_list[2] / (sample_num + 1), 

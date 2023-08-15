@@ -55,7 +55,7 @@ def my_app(cfg: DictConfig) -> None:
     #crop_types = [None]
 
     res = 256
-    n_batches = 128
+    n_batches = 256
 
     if cfg.arch == "dino":
         # 加载vit模型
@@ -103,7 +103,7 @@ def my_app(cfg: DictConfig) -> None:
                     )
 
                     # 加载数据集
-                    loader = DataLoader(dataset, 256, shuffle=False, num_workers=cfg.num_workers, pin_memory=False)
+                    loader = DataLoader(dataset, 512, shuffle=False, num_workers=cfg.num_workers, pin_memory=False)
 
                     with torch.no_grad():
                         # 获取图片特征
@@ -118,7 +118,7 @@ def my_app(cfg: DictConfig) -> None:
                             batch_feats = normed_feats[i:i + step, :]
                             # 将step张特征和batch内的特征计算相似度
                             pairwise_sims = torch.einsum("nf,mf->nm", batch_feats, normed_feats)
-                            # 记录特征矩阵相似度
+                            # 记录特征矩阵相似度，除了0本身之外，1的相似度最高
                             all_nns.append(torch.topk(pairwise_sims, 30)[1])
                             del pairwise_sims
                         # 拼接一个batch内的特征
