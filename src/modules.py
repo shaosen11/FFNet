@@ -166,13 +166,15 @@ class SwinFeaturizer(nn.Module):
                                            is_classify=False)
         self.model.train().cuda()
 
-        for name, param in self.model.named_parameters():
-            if 'layers_fuse' not in name:
-                param.requires_grad = False
+        # for name, param in self.model.named_parameters():
+        #     if 'layers_fuse' not in name:
+        #         param.requires_grad = False
         
         if cfg.swin_is_classify:
             if cfg.swin_model_type == "base" and cfg.swin_window_size == 16:
                 pretrained_weights = "./SwinV2/swinv2_base_patch4_window16_256-pre.pth"
+            elif cfg.swin_model_type == "small" and cfg.swin_window_size == 16:
+                pretrained_weights = "./SwinV2/swinv2_small_patch4_window16_256-pre.pth"
             else:
                 raise ValueError("Unknown model type and window size")
         else:    

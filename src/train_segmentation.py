@@ -158,10 +158,10 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
 
         # 特征，编码
         feats, code = self.net(img)
-        feats_aug, code_aug = self.net(img_aug)
+        # feats_aug, code_aug = self.net(img_aug)
         if self.cfg.correspondence_weight > 0:
             feats_pos, code_pos = self.net(img_pos)
-            feats_aug_pos, code_aug_pos = self.net(img_aug_pos)
+            # feats_aug_pos, code_aug_pos = self.net(img_aug_pos)
             
         log_args = dict(sync_dist=False, rank_zero_only=True)
 
@@ -211,11 +211,15 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
                 feats, feats_pos
             )
 
-            loss_aug = self.contrastive_corr_loss_fn(
-                feats_aug, feats_aug_pos
-            )
+            loss = loss_knn
 
-            loss = loss_knn + loss_aug
+            # loss_aug = self.contrastive_corr_loss_fn(
+            #     feats_aug, feats_aug_pos
+            # )
+
+            # loss = loss_aug
+
+            # loss = loss_knn + loss_aug
 
 
             # # 记录日志

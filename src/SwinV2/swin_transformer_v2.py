@@ -884,17 +884,19 @@ class SwinTransformerV2(nn.Module):
         return flops
 
 
-def swinv2_tiny(img_size = 256, window_size=8, patch_size=4):
+def swinv2_tiny(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
     return SwinTransformerV2(img_size=img_size, window_size=window_size, patch_size=patch_size)
 
 
-def swinv2_small(img_size = 256, window_size=8, patch_size=4):
+def swinv2_small(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
     return SwinTransformerV2(img_size=img_size, 
                              window_size=window_size, 
                              patch_size=patch_size,
                              embed_dim=96, 
                              depths=[2, 2, 18, 2], 
-                             num_heads=[3, 6, 12, 24])
+                             num_heads=[3, 6, 12, 24],
+                             new_num_classes=new_num_classes,
+                             is_classify=is_classify)
 
 def swinv2_base(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
     return SwinTransformerV2(img_size=img_size, 
@@ -912,11 +914,17 @@ def swinv2_tiny_window8(img_size = 256, window_size=8, patch_size=4, new_num_cla
 def swinv2_tiny_window16(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
     return swinv2_tiny(img_size, window_size, patch_size)
 
+def swinv2_tiny_window16_class(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
+    return swinv2_tiny(img_size, window_size, patch_size, new_num_classes=new_num_classes, is_classify=is_classify)
+
 def swinv2_small_window8(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=True):
     return swinv2_small(img_size, window_size, patch_size)
 
 def swinv2_small_window16(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
     return swinv2_small(img_size, window_size, patch_size)
+
+def swinv2_small_window16_class(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
+    return swinv2_small(img_size, window_size, patch_size, new_num_classes=new_num_classes, is_classify=is_classify)
 
 def swinv2_base_window8(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=True):
     return swinv2_base(img_size, window_size, patch_size)
@@ -934,7 +942,7 @@ if __name__ == "__main__":
     input_tensor = torch.randn(10, 3, img_size, img_size, dtype=torch.float)
 
 
-    net = swinv2_base_window16_class(new_num_classes=100)
+    net = swinv2_tiny_window16_class(new_num_classes=100)
     # print(net)
     # net = swinv2_base(img_size=img_size, window_size=window_size, patch_size=4)
     # print(net)
@@ -943,7 +951,7 @@ if __name__ == "__main__":
     #         print(name)
     #         param.requires_grad = False
         
-    pretrained_weights = "./swinv2_base_patch4_window16_256-pre.pth"
+    pretrained_weights = "./swinv2_tiny_patch4_window16_256.pth"
     state_dict = torch.load(pretrained_weights, map_location="cpu")
     for name, weight in state_dict.items():
         print(name)

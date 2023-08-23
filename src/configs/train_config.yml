@@ -9,7 +9,7 @@ submitting_to_aml: False
 num_workers: 4
 max_steps: -1
 max_epochs: 1000
-batch_size: 32
+batch_size: 16
 
 num_neighbors: 7
 dataset_name: "cityscapes"
@@ -29,9 +29,9 @@ loader_crop_type: "center"
 extra_clusters: 0
 use_true_labels: False
 use_recalibrator: False
-# model_type: "vit_small"
+model_type: "vit_small"
 # arch: "dino"
-model_type: "swinv2_base"
+# model_type: "swinv2_base"
 arch: "swin"
 # model_type: "resnet50"
 # arch: "resnet"
@@ -46,7 +46,7 @@ dim: 70
 dropout: True
 zero_clamp: True
 
-lr: 1e-5
+lr: 1e-6
 pretrained_weights: ~
 use_salience: False
 stabalize: False
@@ -56,7 +56,7 @@ stop_at_zero: True
 swin_img_size: 256
 swin_window_size: 16
 swin_patch_size: 4
-swin_model_type: "base"
+swin_model_type: "small"
 swin_is_classify: True
 
 # resnet
@@ -181,7 +181,7 @@ color_space: "rgb"
 reset_probe_steps: ~
 
 # Logging params
-n_images: 5
+n_images: 2
 scalar_log_freq: 10
 checkpoint_freq: 50
 val_freq: 100

@@ -91,7 +91,7 @@ def main(args):
                                              num_workers=nw,
                                              collate_fn=val_dataset.collate_fn)
     
-    arch = 'swinv2_base_window16_class'
+    arch = 'swinv2_small_window16_class'
     # 实例化模型
     model = swinv2.__dict__[arch](new_num_classes=num_classes).to(device)
 
@@ -165,7 +165,7 @@ def main(args):
             to_save = {
                 'model': model.module.state_dict()
             }
-            torch.save(to_save, "./weights/swinv2_base_patch4_window16_256-pre-{}.pth".format(epoch))
+            torch.save(to_save, "./weights/swinv2_small_patch4_window16_256-pre-{}.pth".format(epoch))
 
             # torch.save(model.module.state_dict(), "./weights/swinv2_base_patch4_window16_256-pre-{}.pth".format(epoch))
 
@@ -191,7 +191,7 @@ if __name__ == '__main__':
     parser.add_argument('--data-path', type=str,
                         default="./miniimagenet/")
 
-    parser.add_argument('--weights', type=str, default='./swinv2_base_patch4_window16_256.pth',
+    parser.add_argument('--weights', type=str, default='./swinv2_small_patch4_window16_256.pth',
                         help='initial weights path')
 
     parser.add_argument('--freeze-layers', type=bool, default=False)
