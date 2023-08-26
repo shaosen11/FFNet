@@ -76,8 +76,12 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
             self.net = DinoFeaturizer(dim, cfg)
         elif cfg.arch == "swin":
             self.net = SwinFeaturizer(dim, cfg)
+        elif cfg.arch == "swinv2_upernet":
+            self.net = SwinUperNetFeaturizer(dim, cfg)
         elif cfg.arch == "resnet":
             self.net = ResnetFeaturizer(dim, cfg)
+        elif cfg.arch == "resnet_upernet":
+             self.net = ResnetUperNetFeaturizer(dim, cfg)
         else:
             raise ValueError("Unknown arch {}".format(cfg.arch))
 
@@ -162,56 +166,22 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
         if self.cfg.correspondence_weight > 0:
             feats_pos, code_pos = self.net(img_pos)
             # feats_aug_pos, code_aug_pos = self.net(img_aug_pos)
-            
+
         log_args = dict(sync_dist=False, rank_zero_only=True)
 
-        # # 使用标签
-        # if self.cfg.use_true_labels:
-        #     signal = one_hot_feats(label + 1, self.n_classes + 1)
-        #     signal_pos = one_hot_feats(label_pos + 1, self.n_classes + 1)
-        # # 不使用标签
-        # else:
-        #     signal = feats
-        #     signal_pos = feats_pos
-
         loss = 0
-
-        # # 打印日志
-        # should_log_hist = (self.cfg.hist_freq is not None) and \
-        #                   (self.global_step % self.cfg.hist_freq == 0) and \
-        #                   (self.global_step > 0)
-        
-        # # 真实标签，KNN标签
-        # if self.cfg.use_salience:
-        #     salience = batch["mask"].to(torch.float32).squeeze(1)
-        #     salience_pos = batch["mask_pos"].to(torch.float32).squeeze(1)
-        # else:
-        #     salience = None
-        #     salience_pos = None
 
         # 自身损失，自身相关性
         # knn损失，knn相关性
         # 负样本损失，负样本相关性
         if self.cfg.correspondence_weight > 0:
-            # (
-            #     pos_intra_loss, pos_intra_cd,
-            #     pos_inter_loss, pos_inter_cd,
-            #     neg_inter_loss, neg_inter_cd,
-            # ) = self.contrastive_corr_loss_fn(
-            #     signal, signal_pos,
-            #     salience, salience_pos,
-            #     code, code_pos,
-            # )
-            # (loss, loss_knn, loss_aug) = self.contrastive_corr_loss_fn(
-            #     feats, feats_pos,
-            #     feats_aug, feats_aug_pos
-            # )
-
             loss_knn = self.contrastive_corr_loss_fn(
                 feats, feats_pos
             )
 
-            loss = loss_knn
+            loss += loss_knn
+
+            self.log('loss/contrastive', loss_knn, **log_args)
 
             # loss_aug = self.contrastive_corr_loss_fn(
             #     feats_aug, feats_aug_pos
@@ -220,67 +190,6 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
             # loss = loss_aug
 
             # loss = loss_knn + loss_aug
-
-
-            # # 记录日志
-            # if should_log_hist:
-            #     self.logger.experiment.add_histogram("intra_cd", pos_intra_cd, self.global_step)
-            #     self.logger.experiment.add_histogram("inter_cd", pos_inter_cd, self.global_step)
-            #     self.logger.experiment.add_histogram("neg_cd", neg_inter_cd, self.global_step)
-            # neg_inter_loss = neg_inter_loss.mean()
-            # pos_intra_loss = pos_intra_loss.mean()
-            # pos_inter_loss = pos_inter_loss.mean()
-            # self.log('loss/pos_intra', pos_intra_loss, **log_args)
-            # self.log('loss/pos_inter', pos_inter_loss, **log_args)
-            # self.log('loss/neg_inter', neg_inter_loss, **log_args)
-            # self.log('cd/pos_intra', pos_intra_cd.mean(), **log_args)
-            # self.log('cd/pos_inter', pos_inter_cd.mean(), **log_args)
-            # self.log('cd/neg_inter', neg_inter_cd.mean(), **log_args)
-
-            # # 累计损失
-            # loss += (self.cfg.pos_inter_weight * pos_inter_loss +
-            #          self.cfg.pos_intra_weight * pos_intra_loss +
-            #          self.cfg.neg_inter_weight * neg_inter_loss) * self.cfg.correspondence_weight
-
-        # # 还原分支，默认为0
-        # if self.cfg.rec_weight > 0:
-        #     # 还原特征
-        #     rec_feats = self.decoder(code)
-        #     # 还原损失
-        #     rec_loss = -(norm(rec_feats) * norm(feats)).sum(1).mean()
-        #     self.log('loss/rec', rec_loss, **log_args)
-        #     # 累计损失
-        #     loss += self.cfg.rec_weight * rec_loss
-
-        # # 数据增强分支，默认为0
-        # if self.cfg.aug_alignment_weight > 0:
-        #     # 数据增强编码
-        #     orig_feats_aug, orig_code_aug = self.net(img_aug)
-        #     # 放缩到原始输入编码大小
-        #     downsampled_coord_aug = resize(
-        #         coord_aug.permute(0, 3, 1, 2),
-        #         orig_code_aug.shape[2]).permute(0, 2, 3, 1)
-        #     # 这段代码计算了对齐增强后的特征图code和增强前的特征图orig_code_aug之间的相似度，
-        #     # 该损失项的值越小，说明对齐增强的效果越好，即增强前后的特征图之间的相似度越高。
-        #     aug_alignment = -torch.einsum(
-        #         "bkhw,bkhw->bhw",
-        #         norm(sample(code, downsampled_coord_aug)),
-        #         norm(orig_code_aug)
-        #     ).mean()
-        #     self.log('loss/aug_alignment', aug_alignment, **log_args)
-        #     # 记录损失
-        #     loss += self.cfg.aug_alignment_weight * aug_alignment
-
-        # # CRF，默认为0
-        # if self.cfg.crf_weight > 0:
-        #     # CRF损失
-        #     crf = self.crf_loss_fn(
-        #         resize(img, 56),
-        #         norm(resize(code, 56))
-        #     ).mean()
-        #     self.log('loss/crf', crf, **log_args)
-        #     # 记录损失
-        #     loss += self.cfg.crf_weight * crf
 
         # 展平标签
         flat_label = label.reshape(-1)
@@ -302,11 +211,12 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
         loss += linear_loss
         self.log('loss/linear', linear_loss, **log_args)
 
-        # 聚类损失
-        cluster_loss, cluster_probs = self.cluster_probe(detached_code, None)
-        # 记录损失
-        loss += cluster_loss
-        self.log('loss/cluster', cluster_loss, **log_args)
+        # # 聚类损失
+        # cluster_loss, cluster_probs = self.cluster_probe(detached_code, None)
+        # # 记录损失
+        # loss += cluster_loss
+        # self.log('loss/cluster', cluster_loss, **log_args)
+
         self.log('loss/total', loss, **log_args)
 
         # 反向传播
@@ -316,13 +226,26 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
         cluster_probe_optim.step()
         linear_probe_optim.step()
 
-        # 重设探测步数
-        if self.cfg.reset_probe_steps is not None and self.global_step == self.cfg.reset_probe_steps:
-            print("RESETTING PROBES")
-            self.linear_probe.reset_parameters()
-            self.cluster_probe.reset_parameters()
-            self.trainer.optimizers[1] = torch.optim.Adam(list(self.linear_probe.parameters()), lr=5e-3)
-            self.trainer.optimizers[2] = torch.optim.Adam(list(self.cluster_probe.parameters()), lr=5e-3)
+        # 调整学习率
+        net_optim.param_groups[0]['lr'] -= net_optim.param_groups[0]['lr'] * 0.0001
+        linear_probe_optim.param_groups[0]['lr'] -= linear_probe_optim.param_groups[0]['lr'] * 0.0001
+        cluster_probe_optim.param_groups[0]['lr'] -= cluster_probe_optim.param_groups[0]['lr'] * 0.0001
+
+        # 打印学习率
+        net_optim_lr = net_optim.param_groups[0]['lr']
+        self.log('lr/net_optim_lr', net_optim_lr, **log_args)
+        linear_probe_optim_lr = linear_probe_optim.param_groups[0]['lr']
+        self.log('lr/linear_probe_optim_lr', linear_probe_optim_lr, **log_args)
+        cluster_probe_optim_lr = cluster_probe_optim.param_groups[0]['lr']
+        self.log('lr/cluster_probe_optim_lr', cluster_probe_optim_lr, **log_args)
+
+        # # 重设探测步数
+        # if self.cfg.reset_probe_steps is not None and self.global_step == self.cfg.reset_probe_steps:
+        #     print("RESETTING PROBES")
+        #     self.linear_probe.reset_parameters()
+        #     self.cluster_probe.reset_parameters()
+        #     self.trainer.optimizers[1] = torch.optim.Adam(list(self.linear_probe.parameters()), lr=5e-3)
+        #     self.trainer.optimizers[2] = torch.optim.Adam(list(self.cluster_probe.parameters()), lr=5e-3)
 
         # 创建一个新的文件
         if self.global_step % 2000 == 0 and self.global_step > 0:
@@ -473,9 +396,10 @@ class LitUnsupervisedSegmenter(pl.LightningModule):
         if self.cfg.rec_weight > 0:
             main_params.extend(self.decoder.parameters())
 
-        net_optim = torch.optim.Adam(main_params, lr=self.cfg.lr)
-        linear_probe_optim = torch.optim.Adam(list(self.linear_probe.parameters()), lr=5e-3)
-        cluster_probe_optim = torch.optim.Adam(list(self.cluster_probe.parameters()), lr=5e-3)
+        net_optim = torch.optim.AdamW(main_params, lr=self.cfg.lr)
+        linear_probe_optim = torch.optim.AdamW(list(self.linear_probe.parameters()), lr=5e-3)
+        cluster_probe_optim = torch.optim.AdamW(list(self.cluster_probe.parameters()), lr=5e-3)
+
 
         return net_optim, linear_probe_optim, cluster_probe_optim
 

@@ -4,7 +4,9 @@ from utils import *
 import torch.nn.functional as F
 import dino.vision_transformer as vits
 import SwinV2.swin_transformer_v2 as swinv2
+from SwinV2.swin_transformer_v2_with_upernet import swinv2_with_upernet
 import resnet.resnet as resnet
+from resnet.resnet_with_upernet import resnet_with_upernet
 
 
 class LambdaLayer(nn.Module):
@@ -274,6 +276,106 @@ class SwinFeaturizer(nn.Module):
             return image_feat, code
 
 
+class SwinUperNetFeaturizer(nn.Module):
+    def __init__(self, dim, cfg):
+        super().__init__()
+        self.cfg = cfg
+        # 嵌入层维度
+        self.dim = dim
+        # patch size，划分多少个patch
+        self.patch_size = self.cfg.swin_patch_size
+        # 特征类型
+        self.feat_type = self.cfg.dino_feat_type
+
+        # swin small
+        arch = "swinv2_" + cfg.swin_model_type + "_" + "window" + str(cfg.swin_window_size)
+
+        # 获取模型
+        self.model = swinv2_with_upernet(arch=arch,
+                                    img_size=cfg.swin_img_size, 
+                                    window_size=cfg.swin_window_size,
+                                    patch_size=cfg.swin_patch_size)
+
+        self.model.train().cuda()
+
+        for name, param in self.model.named_parameters():
+            if 'decoder' not in name:
+                # print(name)
+                param.requires_grad = False
+        
+        if cfg.swin_model_type == "tiny" and cfg.swin_window_size == 8:
+            pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window8_256.pth"
+        elif cfg.swin_model_type == "tiny" and cfg.swin_window_size == 16:
+            pretrained_weights = "./SwinV2/swinv2_tiny_patch4_window16_256.pth"
+        elif cfg.swin_model_type == "small" and cfg.swin_window_size == 8:
+            pretrained_weights = "./SwinV2/swinv2_small_patch4_window8_256.pth"
+        elif cfg.swin_model_type == "small" and cfg.swin_window_size == 16:
+            pretrained_weights = "./SwinV2/swinv2_small_patch4_window16_256.pth"
+        elif cfg.swin_model_type == "base" and cfg.swin_window_size == 8:
+            pretrained_weights = "./SwinV2/swinv2_base_patch4_window8_256.pth"
+        elif cfg.swin_model_type == "base" and cfg.swin_window_size == 16:
+            pretrained_weights = "./SwinV2/swinv2_base_patch4_window16_256.pth"
+        else:
+            raise ValueError("Unknown model type and window size")
+
+        print("pretrained_weights:", pretrained_weights)
+
+        if pretrained_weights is not None:
+            state_dict = torch.load(pretrained_weights, map_location="cpu")
+            msg = self.model.encoder.load_state_dict(state_dict['model'], strict=False)
+            print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
+
+        self.n_feats = 512
+
+        # KNN聚类头
+        self.cluster1 = self.make_clusterer(self.n_feats)
+        # 聚类头类型
+        self.proj_type = cfg.projection_type
+        # 非线性聚类头
+        if self.proj_type == "nonlinear":
+            self.cluster2 = self.make_nonlinear_clusterer(self.n_feats)
+        self.dropout = torch.nn.Dropout2d(p=.1)
+
+    # KNN聚类头
+    def make_clusterer(self, in_channels):
+        return torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels, self.dim, (1, 1)))  # ,
+
+    # 非线性聚类头
+    def make_nonlinear_clusterer(self, in_channels):
+        return torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels, in_channels, (1, 1)),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(in_channels, self.dim, (1, 1)))
+    
+    def forward(self, img, n=1, return_class_feat=False):
+        assert (img.shape[2] % self.patch_size == 0)
+        assert (img.shape[3] % self.patch_size == 0)
+
+        # get selected layer activations
+        # 获取每层交互特征，注意力，qkv
+        feat = self.model(img)
+
+        # 返回特征类型
+        if return_class_feat:
+            return feat[:, :1, :].reshape(feat.shape[0], 1, 1, -1).permute(0, 3, 1, 2)
+
+        # print("image_feat:", feat.shape)
+
+        # 聚类
+        if self.proj_type is not None:
+            code = self.cluster1(self.dropout(feat))
+            if self.proj_type == "nonlinear":
+                code += self.cluster2(self.dropout(feat))
+        else:
+            code = feat
+
+        # dropout
+        if self.cfg.dropout:
+            return self.dropout(feat), code
+        else:
+            return feat, code
+
 class ResnetFeaturizer(nn.Module):
     def __init__(self, dim, cfg):
         super().__init__()
@@ -298,7 +400,6 @@ class ResnetFeaturizer(nn.Module):
             state_dict = torch.load(cfg.resnet_pretrained_weights, map_location="cpu")
             msg = self.model.load_state_dict(state_dict, strict=False)
             print('Pretrained weights found at {} and loaded with msg: {}'.format(cfg.resnet_pretrained_weights, msg))
-
 
         self.n_feats = 256
 
@@ -328,6 +429,74 @@ class ResnetFeaturizer(nn.Module):
         # 获取每层交互特征，注意力，qkv
         feat, attn, qkv = self.model.get_intermediate_feat(img, n=n)
         image_feat = feat[0]
+
+        # 聚类
+        if self.proj_type is not None:
+            code = self.cluster1(self.dropout(image_feat))
+            if self.proj_type == "nonlinear":
+                code += self.cluster2(self.dropout(image_feat))
+        else:
+            code = image_feat
+
+        # dropout
+        if self.cfg.dropout:
+            return self.dropout(image_feat), code
+        else:
+            return image_feat, code
+        
+class ResnetUperNetFeaturizer(nn.Module):
+    def __init__(self, dim, cfg):
+        super().__init__()
+        self.cfg = cfg
+        # 嵌入层维度
+        self.dim = dim
+        # 特征类型
+        self.feat_type = self.cfg.dino_feat_type
+        
+        # swin small
+        arch = self.cfg.resnet_model_type
+
+        # 获取模型
+        self.model = resnet_with_upernet()
+        self.model.train().cuda()
+
+        for name, param in self.model.named_parameters():
+            if 'decoder' not in name:
+                param.requires_grad = False
+
+        if cfg.resnet_pretrained_weights is not None:
+            state_dict = torch.load(cfg.resnet_pretrained_weights, map_location="cpu")
+            msg = self.model.encoder.load_state_dict(state_dict, strict=False)
+            print('Pretrained weights found at {} and loaded with msg: {}'.format(cfg.resnet_pretrained_weights, msg))
+
+
+        self.n_feats = 512
+
+        # KNN聚类头
+        self.cluster1 = self.make_clusterer(self.n_feats)
+        # 聚类头类型
+        self.proj_type = cfg.projection_type
+        # 非线性聚类头
+        if self.proj_type == "nonlinear":
+            self.cluster2 = self.make_nonlinear_clusterer(self.n_feats)
+        self.dropout = torch.nn.Dropout2d(p=.1)
+
+    # KNN聚类头
+    def make_clusterer(self, in_channels):
+        return torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels, self.dim, (1, 1)))  # ,
+
+    # 非线性聚类头
+    def make_nonlinear_clusterer(self, in_channels):
+        return torch.nn.Sequential(
+            torch.nn.Conv2d(in_channels, in_channels, (1, 1)),
+            torch.nn.ReLU(),
+            torch.nn.Conv2d(in_channels, self.dim, (1, 1)))
+    
+    def forward(self, img, n=1, return_class_feat=False):
+        # get selected layer activations
+        # 获取每层交互特征，注意力，qkv
+        image_feat = self.model(img)
 
         # 聚类
         if self.proj_type is not None:
@@ -545,7 +714,7 @@ def sample_nonzero_locations(t, target_size):
 
 class ContrastiveCorrelationLoss(nn.Module):
 
-    def __init__(self, cfg, ):
+    def __init__(self, cfg):
         super(ContrastiveCorrelationLoss, self).__init__()
         self.cfg = cfg
 
@@ -559,7 +728,6 @@ class ContrastiveCorrelationLoss(nn.Module):
     def flatten_feature(self, feats):
         batch_size, C, H, W = feats.size()
         feats_flattened = feats.view(batch_size * H * W, C)
-
         return feats_flattened
     
     # 相似度衡量(新增)
@@ -593,8 +761,9 @@ class ContrastiveCorrelationLoss(nn.Module):
         for f_neg in f_negs:
             f_neg_flatten = self.flatten_feature(self.standard_scale(f_neg))
             denominator += torch.exp(self.similar(f_flatten, f_neg_flatten)/t)
-        denominator = torch.sum(denominator).item()
-        molecular = torch.exp(self.similar(f_flatten, f_pos_flatten)/t)
+        denominator = torch.sum(denominator)
+        molecular = torch.sum(torch.exp(self.similar(f_flatten, f_pos_flatten)/t))
+        
         loss = -torch.sum(torch.log((molecular/denominator)))
         return loss
 
@@ -628,121 +797,6 @@ class ContrastiveCorrelationLoss(nn.Module):
 
         return loss, cd
 
-    # def forward(self,
-    #             orig_feats: torch.Tensor, orig_feats_pos: torch.Tensor,
-    #             orig_salience: torch.Tensor, orig_salience_pos: torch.Tensor,
-    #             orig_code: torch.Tensor, orig_code_pos: torch.Tensor,
-    #             ):
-
-    #     # 
-    #     coord_shape = [orig_feats.shape[0], self.cfg.feature_samples, self.cfg.feature_samples, 2]
-
-    #     # 默认False
-    #     if self.cfg.use_salience:
-    #         # 从稀疏张量中提取非零元素的位置，并将这些位置转化为坐标值。
-    #         coords1_nonzero = sample_nonzero_locations(orig_salience, coord_shape)
-    #         coords2_nonzero = sample_nonzero_locations(orig_salience_pos, coord_shape)
-    #         # 对coord_shape均匀采样，乘2保证正数，减1进行归一化到[0,2]
-    #         coords1_reg = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
-    #         coords2_reg = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
-    #         # 将大于0.1的进行保存
-    #         mask = (torch.rand(coord_shape[:-1], device=orig_feats.device) > .1).unsqueeze(-1).to(torch.float32)
-    #         # 
-    #         coords1 = coords1_nonzero * mask + coords1_reg * (1 - mask)
-    #         coords2 = coords2_nonzero * mask + coords2_reg * (1 - mask)
-    #     else:
-    #         # 对coord_shape均匀采样，乘2保证正数，减1进行归一化到[0,2]
-    #         coords1 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
-    #         coords2 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
-
-    #     # 原始输入
-    #     # 用于对输入的张量orig_feats进行采样，采样的坐标值由参数coords给出
-    #     feats = sample(orig_feats, coords1)
-    #     # 采样
-    #     code = sample(orig_code, coords1)
-
-    #     # KNN输入
-    #     # 采样
-    #     feats_pos = sample(orig_feats_pos, coords2)
-    #     # 采样
-    #     code_pos = sample(orig_code_pos, coords2)
-
-    #     # 自身的损失，自身的相关性
-    #     pos_intra_loss, pos_intra_cd = self.helper(
-    #         feats, feats, code, code, self.cfg.pos_intra_shift)
-    #     # knn的损失，knn的相关性
-    #     pos_inter_loss, pos_inter_cd = self.helper(
-    #         feats, feats_pos, code, code_pos, self.cfg.pos_inter_shift)
-
-    #     neg_losses = []
-    #     neg_cds = []
-    #     # 遍历负样本，5个
-    #     for i in range(self.cfg.neg_samples):
-    #         # 将orig_feats都置换成不同的元素
-    #         perm_neg = super_perm(orig_feats.shape[0], orig_feats.device)
-    #         # 采样负样本特征
-    #         feats_neg = sample(orig_feats[perm_neg], coords2)
-    #         # 采样负样本编码
-    #         code_neg = sample(orig_code[perm_neg], coords2)
-    #         # 负样本损失，负样本相关性
-    #         neg_inter_loss, neg_inter_cd = self.helper(
-    #             feats, feats_neg, code, code_neg, self.cfg.neg_inter_shift)
-    #         neg_losses.append(neg_inter_loss)
-    #         neg_cds.append(neg_inter_cd)
-    #     neg_inter_loss = torch.cat(neg_losses, axis=0)
-    #     neg_inter_cd = torch.cat(neg_cds, axis=0)
-
-    #     return (pos_intra_loss.mean(),
-    #             pos_intra_cd,
-    #             pos_inter_loss.mean(),
-    #             pos_inter_cd,
-    #             neg_inter_loss,
-    #             neg_inter_cd)
-
-    # def forward(self,
-    #             orig_feats: torch.Tensor, orig_feats_pos: torch.Tensor,
-    #             aug_feats: torch.Tensor, aug_feats_pos:torch.Tensor):
-    #     """
-    #         feats:[batch_size, C, H, W]
-    #     """
-    #     coord_shape = [orig_feats.shape[0], self.cfg.feature_samples, self.cfg.feature_samples, 2]  # [16, 11, 11, 2]
-
-    #     # 最终生成的 coords1 和 coords2 张量是随机坐标，其中每个坐标点都由两个浮点数值表示，位于 [-1, 1) 区间内。
-    #     # 这些坐标将用于在原始特征张量中进行采样，从而获取对应的样本特征用于计算对比损失。
-    #     coords1 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1 # [16, 11, 11, 2]
-    #     coords2 = torch.rand(coord_shape, device=orig_feats.device) * 2 - 1
-		
-	# 	# 采用视角coords1采样knn分支
-    #     # 采样img
-    #     feats = sample(orig_feats, coords1) # [batch_size, C, 11, 11]
-    #     # 采样img_pos
-    #     feats_pos = sample(orig_feats_pos, coords1)
-		
-	# 	# 使用coords2采样aug分支
-    #     # 采样aug_feats
-    #     feats_aug = sample(aug_feats, coords2)
-
-    #     # 采样aug_feats_pos
-    #     feats_aug_pos = sample(aug_feats_pos, coords2)
-
-    #     # 生成负样本列表
-    #     neg_list_knn = []
-    #     neg_list_aug = []
-    #     for i in range(self.cfg.neg_samples):   # neg_samples=5
-    #         # 生成一个具有原始特征张量 orig_feats 批次大小的随机排列张量 perm_neg
-    #         perm_neg = super_perm(orig_feats.shape[0], orig_feats.device)
-    #         # 根据分支不同采用不同的coords采样策略
-    #         feats_neg_1 = sample(orig_feats[perm_neg], coords2)
-    #         feats_neg_2 = sample(orig_feats[perm_neg], coords1)
-    #         # 新增，创建负样本列表neg_list
-    #         neg_list_knn.append(feats_neg_1)
-    #         neg_list_aug.append(feats_neg_2)
-
-    #     loss_knn = self.helper_SegNCE(feats, feats_pos, neg_list_knn)
-    #     loss_aug = self.helper_SegNCE(feats_aug, feats_aug_pos, neg_list_aug)
-    #     losses = loss_knn + loss_aug
-
-    #     return (losses, loss_knn, loss_aug)
     
     def forward(self,
             feats: torch.Tensor, feats_pos: torch.Tensor):

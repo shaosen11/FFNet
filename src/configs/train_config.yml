@@ -6,10 +6,12 @@ azureml_logging: True
 submitting_to_aml: False
 
 # Loader params
-num_workers: 4
+num_workers: 8
 max_steps: -1
 max_epochs: 1000
-batch_size: 16
+batch_size: 128
+
+warmup_epochs: 5
 
 num_neighbors: 7
 dataset_name: "cityscapes"
@@ -31,10 +33,17 @@ use_true_labels: False
 use_recalibrator: False
 model_type: "vit_small"
 # arch: "dino"
+
 # model_type: "swinv2_base"
-arch: "swin"
+# arch: "swin"
+# model_type: "swinv2_base"
+arch: "swinv2_upernet"
+
 # model_type: "resnet50"
 # arch: "resnet"
+# model_type: "resnet50"
+# arch: "resnet_upernet"
+
 use_fit_model: False
 dino_feat_type: "feat"
 projection_type: "nonlinear"
@@ -46,7 +55,7 @@ dim: 70
 dropout: True
 zero_clamp: True
 
-lr: 1e-6
+lr: 5e-7
 pretrained_weights: ~
 use_salience: False
 stabalize: False
@@ -56,7 +65,7 @@ stop_at_zero: True
 swin_img_size: 256
 swin_window_size: 16
 swin_patch_size: 4
-swin_model_type: "small"
+swin_model_type: "tiny"
 swin_is_classify: True
 
 # resnet
@@ -64,7 +73,7 @@ resnet_model_type: "resnet50"
 resnet_pretrained_weights: "./resnet/resnet50.pth"
 
 # loss
-temperature: 0.3
+temperature: 1
 
 # Feature Contrastive params
 pointwise: True
@@ -181,7 +190,7 @@ color_space: "rgb"
 reset_probe_steps: ~
 
 # Logging params
-n_images: 2
+n_images: 5
 scalar_log_freq: 10
 checkpoint_freq: 50
 val_freq: 100

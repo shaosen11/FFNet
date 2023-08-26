@@ -13,185 +13,6 @@ from timm.models.layers import DropPath, to_2tuple, trunc_normal_
 import numpy as np
 import math
 
-
-# 封装的卷积，归一化核激活层
-class ConvBNReLU(nn.Sequential):
-    def __init__(self, in_channel, out_channel, kernel_size=3, stride=1, groups=1):
-        # 如果pading等于3，那么padding=0
-        padding = (kernel_size - 1) // 2
-        super(ConvBNReLU, self).__init__(
-            nn.Conv2d(in_channel, out_channel, kernel_size, stride, padding, groups=groups, bias=False),
-            nn.BatchNorm2d(out_channel),
-            nn.ReLU(inplace=True)
-        )
-
-
-class classHead(nn.Module):
-    def __init__(self, in_channel, num_classes=1000):
-        super().__init__()
-        self.avgpool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc = nn.Linear(in_channel, num_classes)
-
-    def forward(self, x):
-        x = self.avgpool(x)
-        x = torch.flatten(x, 1)
-        x = self.fc(x)
-        return x
-
-# class MSCAM(nn.Module):
-#     def __init__(self, inchannel: int, midchannel: int, device='cuda'):
-#         super().__init__()
-#         self.channel_conv_d = nn.Conv2d(inchannel, midchannel, 1, device=device)
-#         self.spatial_conv_d = nn.Conv2d(inchannel, midchannel, 1, device=device)
-#         self.channel_conv_u = nn.Conv2d(midchannel, inchannel, 1, device=device)
-#         self.spatial_conv_u = nn.Conv2d(midchannel, inchannel, 1, device=device)
-
-#     def forward(self, x):
-#         channel_attn = F.adaptive_avg_pool2d(x, 1)
-#         channel_attn = self.channel_conv_d(channel_attn)
-#         channel_attn = F.relu(channel_attn, inplace=True)
-#         channel_attn = self.channel_conv_u(channel_attn)
-
-#         spatial_attn = self.spatial_conv_d(x)
-#         spatial_attn = F.relu(spatial_attn, inplace=True)
-#         spatial_attn = self.spatial_conv_u(spatial_attn)
-#         fusion = channel_attn.expand_as(spatial_attn) + spatial_attn
-#         fusion = torch.sigmoid(fusion)
-#         return x * fusion
-
-# class OPM(nn.Module):
-#     def __init__(self, inchannel: int):
-#         super().__init__()
-#         self.conv = nn.Conv2d(inchannel, 1, 1)
-
-#     def forward(self, x):
-#         return torch.sigmoid(self.conv(x))
-
-
-class OPM(nn.Module):
-    def __init__(self, inchannel: int, kernel_size=3, expand_ratio=4):
-        super().__init__()
-        hidden_channel = inchannel * expand_ratio
-
-        self.conv = nn.Conv2d(inchannel, 1, 1)
-
-        self.conv_up = ConvBNReLU(in_channel=inchannel, out_channel=hidden_channel, kernel_size=1)
-        self.conv_mid = ConvBNReLU(in_channel=hidden_channel, out_channel=hidden_channel, kernel_size=kernel_size, groups=hidden_channel)
-        self.conv_down = ConvBNReLU(in_channel=hidden_channel, out_channel=inchannel, kernel_size=1)
-
-    def forward(self, x):
-        shortcut = x
-        x = self.conv_up(x)
-        x = self.conv_mid(x)
-        x = self.conv_down(x)
-        return torch.sigmoid(self.conv(x + shortcut))
-
-    
-
-class LayerFuse(nn.Module):
-    def __init__(self, chnnels, window_size, kernel_size, num_classes=1000, is_classify=False):
-        super().__init__()
-        self.out_channels = chnnels
-        self.window_size = window_size
-        self.kernel_size = kernel_size
-        self.is_classify = is_classify
-
-        self.opms = nn.ModuleList([
-            OPM(self.out_channels[i], self.kernel_size[i])
-        for i in range(len(self.out_channels))])
-
-        self.up_convs = nn.ModuleList([
-            # nn.Conv2d(self.out_channels[i - 1], self.out_channels[i], kernel_size=1)
-            ConvBNReLU(in_channel=self.out_channels[i - 1], out_channel=self.out_channels[i], kernel_size=1)
-        for i in range(len(self.out_channels))])
-
-        self.down_convs = nn.ModuleList([
-            # nn.Conv2d(self.out_channels[i], self.out_channels[i - 1], kernel_size=1)
-            ConvBNReLU(in_channel=self.out_channels[i], out_channel=self.out_channels[i - 1], kernel_size=1)
-        for i in range(len(self.out_channels))])
-
-        if self.is_classify:
-            self.classHead = nn.ModuleList([
-                classHead(self.out_channels[i], num_classes)
-            for i in range(len(self.out_channels))])
-
-        # self.bns1 = nn.ModuleList([
-        #     nn.BatchNorm2d(self.out_channels[i])
-        # for i in range(len(self.out_channels))])
-
-        # self.act1 = nn.ReLU()
-
-        # self.bns2 = nn.ModuleList([
-        #     nn.BatchNorm2d(self.out_channels[i])
-        # for i in range(len(self.out_channels))])
-
-        # self.act2 = nn.ReLU()
-
-        for m in self.modules():
-            if isinstance(m, nn.Conv2d):
-                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
-
-    def forward(self, features, n=1):
-        feat = []
-        classResult = []
-        last_feature = None
-        for i in range(len(features) - 1, -1, -1):
-            # 获取当前特征
-            feature = features[i]
-            # batch_size
-            B = feature.shape[0]
-            # 当前宽高
-            ori_window_size = round(math.sqrt(feature.shape[1]))
-            # chnnels
-            C = feature.shape[2]
-
-            # # B L C -> B C L
-            # feature_copy = feature.transpose(1, 2)
-            # # B C L -> B C H W
-            # feature_copy = feature_copy.view(B, C, ori_window_size, ori_window_size)
-
-            # feature_copy = feature.view(-1, ori_window_size, ori_window_size, C)
-
-            # B L C -> B H W C
-            feature = feature.view(B, ori_window_size, ori_window_size, C)
-            # B H W C -> B C H W
-            feature = feature.permute(0, 3, 1, 2).contiguous()
-
-            
-            # 最后一层无操作
-            if i + 1 == len(features):
-                last_feature = feature
-
-            else:
-                # 当前层升维
-                feature = self.up_convs[i + 1](feature)
-                # 上一层的宽高
-                next_window_size = self.window_size[i + 1]
-                last_feature = F.interpolate(last_feature, (next_window_size, next_window_size), mode='bilinear')
-                # 物体推荐模块
-                mask = self.opms[i + 1](last_feature)
-                last_feature = mask * last_feature + (1 - mask) * feature
-                # # relu
-                # last_feature = self.act1(last_feature)
-                # # 归一化
-                # last_feature = self.bns1[i + 1](last_feature)
-                # 降维
-                last_feature = self.down_convs[i + 1](last_feature)
-                # # relu
-                # last_feature = self.act2(last_feature)
-                # # 归一化
-                # last_feature = self.bns2[i](last_feature)
-            if self.is_classify:
-                classResult.append(self.classHead[i](last_feature))
-
-
-            if i < n:
-                next_window_size = self.window_size[i]
-                last_feature = F.interpolate(last_feature, (next_window_size, next_window_size), mode='bilinear')
-                feat.append(last_feature)
-
-        return feat, classResult
-
 class Mlp(nn.Module):
     def __init__(self, in_features, hidden_features=None, out_features=None, act_layer=nn.GELU, drop=0.):
         super().__init__()
@@ -267,7 +88,6 @@ class WindowAttention(nn.Module):
         self.num_heads = num_heads
 
         self.logit_scale = nn.Parameter(torch.log(10 * torch.ones((num_heads, 1, 1))), requires_grad=True)
-
         # mlp to generate continuous relative position bias
         self.cpb_mlp = nn.Sequential(nn.Linear(2, 512, bias=True),
                                      nn.ReLU(inplace=True),
@@ -316,7 +136,7 @@ class WindowAttention(nn.Module):
         self.proj_drop = nn.Dropout(proj_drop)
         self.softmax = nn.Softmax(dim=-1)
 
-    def forward(self, x, mask=None, return_qkv=False):
+    def forward(self, x, mask=None):
         """
         Args:
             x: input features with shape of (num_windows*B, N, C)
@@ -355,8 +175,7 @@ class WindowAttention(nn.Module):
         x = (attn @ v).transpose(1, 2).reshape(B_, N, C)
         x = self.proj(x)
         x = self.proj_drop(x)
-        # return x
-        return x, attn, qkv
+        return x
 
     def extra_repr(self) -> str:
         return f'dim={self.dim}, window_size={self.window_size}, ' \
@@ -447,7 +266,7 @@ class SwinTransformerBlock(nn.Module):
 
         self.register_buffer("attn_mask", attn_mask)
 
-    def forward(self, x, return_qkv = False):
+    def forward(self, x):
         H, W = self.input_resolution
         B, L, C = x.shape
         assert L == H * W, "input feature has wrong size"
@@ -466,15 +285,11 @@ class SwinTransformerBlock(nn.Module):
         x_windows = x_windows.view(-1, self.window_size * self.window_size, C)  # nW*B, window_size*window_size, C
 
         # W-MSA/SW-MSA
-        # attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
-        x, attn, qkv = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
-
+        attn_windows = self.attn(x_windows, mask=self.attn_mask)  # nW*B, window_size*window_size, C
 
         # merge windows
-        # attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
-        # shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
-        x = x.view(-1, self.window_size, self.window_size, C)
-        shifted_x = window_reverse(x, self.window_size, H, W)  # B H' W' C
+        attn_windows = attn_windows.view(-1, self.window_size, self.window_size, C)
+        shifted_x = window_reverse(attn_windows, self.window_size, H, W)  # B H' W' C
 
         # reverse cyclic shift
         if self.shift_size > 0:
@@ -486,9 +301,6 @@ class SwinTransformerBlock(nn.Module):
 
         # FFN
         x = x + self.drop_path(self.norm2(self.mlp(x)))
-
-        if return_qkv:
-            return x, attn, qkv
 
         return x
 
@@ -618,7 +430,6 @@ class BasicLayer(nn.Module):
                 x = blk(x)
         if self.downsample is not None:
             x = self.downsample(x)
-        
         return x
 
     def extra_repr(self) -> str:
@@ -719,8 +530,7 @@ class SwinTransformerV2(nn.Module):
                  window_size=7, mlp_ratio=4., qkv_bias=True,
                  drop_rate=0., attn_drop_rate=0., drop_path_rate=0.1,
                  norm_layer=nn.LayerNorm, ape=False, patch_norm=True,
-                 use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0],
-                 new_num_classes = 1000, is_classify=False, **kwargs):
+                 use_checkpoint=False, pretrained_window_sizes=[0, 0, 0, 0], **kwargs):
         super().__init__()
 
         self.num_classes = num_classes
@@ -730,11 +540,6 @@ class SwinTransformerV2(nn.Module):
         self.patch_norm = patch_norm
         self.num_features = int(embed_dim * 2 ** (self.num_layers - 1))
         self.mlp_ratio = mlp_ratio
-
-        self.features = []
-        self.in_channels = [96, 192, 384]
-        self.out_dim = 96
-
 
         # split image into non-overlapping patches
         self.patch_embed = PatchEmbed(
@@ -777,27 +582,14 @@ class SwinTransformerV2(nn.Module):
         self.avgpool = nn.AdaptiveAvgPool1d(1)
         self.head = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
 
-        self.layer_fuse_out_channels = []
+        self.layer_out_channels = []
         for i in range(self.num_layers):
             if i < self.num_layers - 1:
-                self.layer_fuse_out_channels.append(embed_dim * 2 ** (i + 1))
+                self.layer_out_channels.append(embed_dim * 2 ** (i + 1))
             else:
-                self.layer_fuse_out_channels.append(embed_dim * 2 ** (i))
+                self.layer_out_channels.append(embed_dim * 2 ** (i))
 
-
-        self.layer_fuse_window_size = [(img_size // patch_size) // 2 ** i for i in range(self.num_layers)]
-
-        self.layer_fuse_kernel_size = [7, 5, 3, 1]
-
-        self.is_classify = is_classify
-
-        # 特征融合
-        self.layers_fuse = LayerFuse(self.layer_fuse_out_channels, 
-                                     self.layer_fuse_window_size,
-                                     self.layer_fuse_kernel_size,
-                                     new_num_classes,
-                                     self.is_classify)
-
+        self.layer_window_size = [(img_size // patch_size) // 2 ** i for i in range(self.num_layers)]
 
         self.apply(self._init_weights)
         for bly in self.layers:
@@ -826,53 +618,31 @@ class SwinTransformerV2(nn.Module):
             x = x + self.absolute_pos_embed
         x = self.pos_drop(x)
 
-        self.features = []
         for layer in self.layers:
             x = layer(x)
-            if layer == 0:
-                continue
-            else:
-                self.features.append(x)
 
         x = self.norm(x)  # B L C
-        x = self.avgpool(x.transpose(1, 2))  # B C L -> B C 1
+        x = self.avgpool(x.transpose(1, 2))  # B C 1
         x = torch.flatten(x, 1)
         return x
 
-    def new_forward_classification(self, x):
-        x = self.forward_features(x)
-        # for i in range(len(self.features) - 2, -1, -1):
-        #     x = self.convs[i](x)
-        #     x = F.interpolate(x, self.features[i].shape[-2:], mode='bilinear')
-        #     mask = self.ms_cams[i](x + self.features[i])
-        #     x = mask * x + (1 - mask) * self.features[i]
-        x = self.head(x)
-        return x
-
-    def forward_classification(self, x):
-        x = self.forward_features(x)
-        x = self.head(x)
-        return x
-    
     def forward(self, x):
         x = self.forward_features(x)
-        # 特征融合
-        _, classResult = self.layers_fuse(self.features, n = 1)
-        # feat.append(self.features[3])
+        x = self.head(x)
+        return x
 
-        return classResult
-    
-    def get_intermediate_feat(self, x, n=1):
-        x = self.forward_features(x)
-        feat = []
-        attns = []
-        qkvs = []
+    def forward_layer(self, x):
+        x = self.patch_embed(x)
+        if self.ape:
+            x = x + self.absolute_pos_embed
+        x = self.pos_drop(x)
+
+        tokens = []
+        for layer in self.layers:
+            x = layer(x)
+            tokens.append(x)
         
-        # 特征融合
-        feat, classResult = self.layers_fuse(self.features, n = 1)
-        # feat.append(self.features[3])
-
-        return feat, attns, qkvs
+        return tokens
 
     def flops(self):
         flops = 0
@@ -884,56 +654,250 @@ class SwinTransformerV2(nn.Module):
         return flops
 
 
-def swinv2_tiny(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
+def swinv2_tiny(img_size=256, window_size=8, patch_size=4):
     return SwinTransformerV2(img_size=img_size, window_size=window_size, patch_size=patch_size)
 
 
-def swinv2_small(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
+def swinv2_small(img_size=256, window_size=8, patch_size=4):
     return SwinTransformerV2(img_size=img_size, 
                              window_size=window_size, 
                              patch_size=patch_size,
                              embed_dim=96, 
                              depths=[2, 2, 18, 2], 
-                             num_heads=[3, 6, 12, 24],
-                             new_num_classes=new_num_classes,
-                             is_classify=is_classify)
+                             num_heads=[3, 6, 12, 24])
 
-def swinv2_base(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=False):
+def swinv2_base(img_size=256, window_size=8, patch_size=4):
     return SwinTransformerV2(img_size=img_size, 
                              window_size=window_size, 
                              patch_size=patch_size,
                              embed_dim=128, 
                              depths=[2, 2, 18, 2], 
-                             num_heads=[4, 8, 16, 32],
-                             new_num_classes=new_num_classes,
-                             is_classify=is_classify)
+                             num_heads=[4, 8, 16, 32])
 
-def swinv2_tiny_window8(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=True):
+
+def swinv2_tiny_window8(img_size = 256, window_size=8, patch_size=4):
     return swinv2_tiny(img_size, window_size, patch_size)
 
-def swinv2_tiny_window16(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
+def swinv2_tiny_window16(img_size = 256, window_size=8, patch_size=4):
     return swinv2_tiny(img_size, window_size, patch_size)
 
-def swinv2_tiny_window16_class(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
-    return swinv2_tiny(img_size, window_size, patch_size, new_num_classes=new_num_classes, is_classify=is_classify)
-
-def swinv2_small_window8(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=True):
+def swinv2_small_window8(img_size = 256, window_size=8, patch_size=4):
     return swinv2_small(img_size, window_size, patch_size)
 
-def swinv2_small_window16(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
+def swinv2_small_window16(img_size = 256, window_size=8, patch_size=4):
     return swinv2_small(img_size, window_size, patch_size)
 
-def swinv2_small_window16_class(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
-    return swinv2_small(img_size, window_size, patch_size, new_num_classes=new_num_classes, is_classify=is_classify)
-
-def swinv2_base_window8(img_size = 256, window_size=8, patch_size=4, new_num_classes=1000, is_classify=True):
+def swinv2_base_window8(img_size = 256, window_size=8, patch_size=4):
     return swinv2_base(img_size, window_size, patch_size)
 
-def swinv2_base_window16(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
+def swinv2_base_window16(img_size = 256, window_size=8, patch_size=4):
     return swinv2_base(img_size, window_size, patch_size)
 
-def swinv2_base_window16_class(img_size = 256, window_size=16, patch_size=4, new_num_classes=1000, is_classify=True):
-    return swinv2_base(img_size, window_size, patch_size, new_num_classes=new_num_classes, is_classify=is_classify)
+
+function_dict = {
+    "swinv2_tiny_window8": swinv2_tiny_window8,
+    "swinv2_tiny_window16": swinv2_tiny_window16,
+    "swinv2_small_window8": swinv2_small_window8,
+    "swinv2_small_window16": swinv2_small_window16,
+    "swinv2_base_window8": swinv2_base_window8,
+    "swinv2_base_window16": swinv2_base_window16
+}
+
+
+def conv3x3(in_planes, out_planes, stride=1, has_bias=False):
+    "3x3 convolution with padding"
+    return nn.Conv2d(in_planes, out_planes, kernel_size=3, stride=stride,
+                     padding=1, bias=has_bias)
+
+
+def conv3x3_bn_relu(in_planes, out_planes, stride=1):
+    return nn.Sequential(
+            conv3x3(in_planes, out_planes, stride),
+            nn.BatchNorm2d(out_planes),
+            nn.ReLU(inplace=True),
+            )
+
+
+class UPerNet(nn.Module):
+    def __init__(self, fc_dim=4096,
+                 use_softmax=False, pool_scales=(1, 2, 3, 6),
+                 fpn_inplanes=(256,512,1024,2048), fpn_dim=256):
+        super(UPerNet, self).__init__()
+        # 是否使用softmax
+        self.use_softmax = use_softmax
+
+        # ============================PPM Module====================================
+        self.ppm_pooling = []
+        self.ppm_conv = []
+
+        for scale in pool_scales:
+            # we use the feature map size instead of input image size, so down_scale = 1.0
+            # ROIPooling
+            # 以1，2，3，6为核大小的池化
+            self.ppm_pooling.append(nn.AdaptiveAvgPool2d(output_size=(scale, scale)))
+            # 1*1 -> bn -> relu
+            self.ppm_conv.append(nn.Sequential(
+                # 1*1降维
+                nn.Conv2d(fc_dim, 512, kernel_size=1, bias=False),
+                # bn
+                nn.BatchNorm2d(512),
+                # relu
+                nn.ReLU(inplace=True)
+            ))
+        self.ppm_pooling = nn.ModuleList(self.ppm_pooling)
+        self.ppm_conv = nn.ModuleList(self.ppm_conv)
+        # 融合所有特征
+        # 3*3 -> bn -> relu
+        self.ppm_last_conv = conv3x3_bn_relu(fc_dim + len(pool_scales)*512, fpn_dim, 1)
+
+        # ============================FPN Module=====================================
+        self.fpn_in = []
+        # 256,512,1024
+        for fpn_inplane in fpn_inplanes[:-1]: # skip the top layer
+            self.fpn_in.append(nn.Sequential(
+                # 1*1
+                nn.Conv2d(fpn_inplane, fpn_dim, kernel_size=1, bias=False),
+                # bn
+                nn.BatchNorm2d(fpn_dim),
+                # relu
+                nn.ReLU(inplace=True)
+            ))
+        self.fpn_in = nn.ModuleList(self.fpn_in)
+
+        self.fpn_out = []
+        # 256,512,1024
+        for i in range(len(fpn_inplanes) - 1): # skip the top layer
+            # 3*3 -> bn -> relu
+            self.fpn_out.append(nn.Sequential(
+                conv3x3_bn_relu(fpn_dim, fpn_dim, 1),
+            ))
+        self.fpn_out = nn.ModuleList(self.fpn_out)
+
+        # 1*1降维，4个特征层融合
+        self.conv_fusion = conv3x3_bn_relu(len(fpn_inplanes) * fpn_dim, fpn_dim, 1)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv2d):
+                nn.init.kaiming_normal_(m.weight, mode='fan_out', nonlinearity='relu')
+
+
+    def forward(self, conv_out):
+
+        # output_dict = {k: None for k in output_switch.keys()}
+
+        # 获取resnet最后一层输出
+        conv5 = conv_out[-1]
+        # 输出特征大小
+        input_size = conv5.size()
+        ppm_out = [conv5]
+        roi = [] # fake rois, just used for pooling
+        # 遍历每个样本
+        for i in range(input_size[0]): # batch size
+            roi.append(torch.Tensor([i, 0, 0, input_size[3], input_size[2]]).view(1, -1)) # b, x0, y0, x1, y1
+        # 拼接所有输出，转成同样的数据类型
+        roi = torch.cat(roi, dim=0).type_as(conv5)
+
+        # ============================PPN Module=====================================
+        ppm_out = [conv5]
+        # print("ppm_out:", ppm_out)
+        # 每个roi区域遍历roipooling
+        for pool_scale, pool_conv in zip(self.ppm_pooling, self.ppm_conv):
+            ppm_out.append(
+                # 1*1 -> bn -> relu
+                pool_conv(
+                    F.interpolate(
+                        # roipol，对backbone最后一次进行下采样
+                        # pool_scale(conv5, roi.detach()), 
+                        pool_scale(conv5),
+                        # 原始图片的宽高
+                        (input_size[2], input_size[3]), 
+                        mode='bilinear', 
+                        align_corners=False)
+                        )
+                    )
+        # 拼接所有输出
+        ppm_out = torch.cat(ppm_out, 1)
+        # print("ppm_out:", ppm_out)
+        # 融合所有特征
+        f = self.ppm_last_conv(ppm_out)
+        # print("f:", f)
+        
+        # ============================FPN Module=====================================
+        # ============================FPN Module 计算=====================================
+        fpn_feature_list = [f]
+        # 遍历FPN每层特征
+        for i in reversed(range(len(conv_out) - 1)):
+            # 获取特定层特征
+            conv_x = conv_out[i]
+            # 1*1 -> bn -> relu
+            conv_x = self.fpn_in[i](conv_x) # lateral branch
+
+            # 双线性插值向下采样
+            f = F.interpolate(
+                f, size=conv_x.size()[2:], mode='bilinear', align_corners=False) # top-down branch
+            # 残差链接
+            f = conv_x + f
+            # print("f:", f)
+            # 追加特征
+            fpn_feature_list.append(self.fpn_out[i](f))
+        fpn_feature_list.reverse() # [P2 - P5]
+
+           
+        # ============================FPN Module 融合=====================================
+        # 最底层特征大小
+        output_size = fpn_feature_list[0].size()[2:]
+        # 添加最底层特征
+        fusion_list = [fpn_feature_list[0]]
+        # 遍历所有fpn输出层
+        for i in range(1, len(fpn_feature_list)):
+            # 上采样到同一特征大小
+            fusion_list.append(F.interpolate(
+                fpn_feature_list[i],
+                output_size,
+                mode='bilinear', align_corners=False))
+        # 拼接所有层特征
+        fusion_out = torch.cat(fusion_list, 1)
+        # print("fusion_out:", fusion_out)
+        # 融合所有层特征
+        x = self.conv_fusion(fusion_out)
+        # print("x:", x)
+            
+        return x
+    
+
+def token_to_feature(tokens):
+    features = []
+    for i in range(len(tokens)):
+        token = tokens[i]
+        B = token.shape[0]
+        ori_window_size = round(math.sqrt(token.shape[1]))
+        C = token.shape[2]
+
+        feature = token.view(B, ori_window_size, ori_window_size, C)
+        feature = feature.permute(0, 3, 1, 2).contiguous()
+        features.append(feature)
+    return features
+
+
+class swinv2_with_upernet(nn.Module):
+    def __init__(self, arch, img_size=256, window_size=8, patch_size=4):
+        super().__init__()
+        self.encoder = function_dict[arch](img_size, window_size, patch_size)
+        self.decoder = UPerNet(
+            fc_dim=self.encoder.layer_out_channels[3],
+            fpn_inplanes=self.encoder.layer_out_channels,
+            fpn_dim=512
+        )
+
+    def forward(self, x):
+        tokens = self.encoder.forward_layer(x)
+        features = token_to_feature(tokens)
+        out = self.decoder(features)
+        return out
+        
+
+
+
 
 if __name__ == "__main__":
     img_size = 256
@@ -941,33 +905,49 @@ if __name__ == "__main__":
 
     input_tensor = torch.randn(10, 3, img_size, img_size, dtype=torch.float)
 
+    nr_classes = {'object':21}
 
-    net = swinv2_base_window16_class(new_num_classes=100)
-    print(net)
-    # net = swinv2_base(img_size=img_size, window_size=window_size, patch_size=4)
-    # print(net)
-    # for name, param in net.named_parameters():
-    #     if 'layers_fuse' not in name:
-    #         print(name)
-    #         param.requires_grad = False
+    # net = swinv2_base()
+    # # print(net)
+
+    # tokens = net.forward_layer(input_tensor)
+
+    # # print(net.layer_out_channels)
+    # # print(net.layer_window_size)
+    
+    # features = token_to_feature(tokens)
+    
+    
+    # upernet = UPerNet(
+    #     nr_classes=nr_classes,
+    #     fc_dim=1024,
+    #     fpn_inplanes=net.layer_out_channels,
+    #     use_softmax=True,
+    #     fpn_dim=256
+    # )
+
+    # # print(upernet)
+
+    # out = upernet(features, nr_classes, (256, 256))
+
+    # # print(out['object'].shape)
+
+    net_with_upernet = swinv2_with_upernet("swinv2_base_window16", img_size=256, window_size=16, patch_size=4)
+
+    # print(net_with_upernet)
+
+    for name, param in net_with_upernet.named_parameters():
+        if 'decoder' not in name:
+            param.requires_grad = False
         
-    # pretrained_weights = "./swinv2_tiny_patch4_window16_256.pth"
-    # state_dict = torch.load(pretrained_weights, map_location="cpu")
-    # for name, weight in state_dict.items():
-    #     print(name)
+    pretrained_weights = "./swinv2_base_patch4_window16_256.pth"
+    state_dict = torch.load(pretrained_weights, map_location="cpu")
+    for name, weight in state_dict.items():
+        print(name)
 
-    # msg = net.load_state_dict(state_dict['model'], strict=False)
-    # print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
+    msg = net_with_upernet.encoder.load_state_dict(state_dict['model'], strict=False)
+    print('Pretrained weights found at {} and loaded with msg: {}'.format(pretrained_weights, msg))
 
+    out_with_upernet = net_with_upernet(input_tensor)
 
-    # to_save = {
-    #     'model': net.state_dict()
-    # }
-    # torch.save(to_save, "./swinv2_base_patch4_window16_256-pre-copy.pth")
-    # feat, attns, qkvs = net.get_intermediate_feat(input_tensor)
-
-    # print(feat[0].shape)
-
-    # outs = net(input_tensor)
-
-    # print(len(outs))
+    print(out_with_upernet.shape)
